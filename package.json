@@ -1,0 +1,34 @@
+{
+  "name": "header-patch",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A small Chrome and Edge extension for setting request headers.",
+  "type": "module",
+  "license": "MIT",
+  "author": "coder-yml",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/coder-yml/header-patch.git"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "audit:public": "node scripts/check-public.mjs",
+    "test": "node --test tests/i18n.test.js tests/rules.test.js tests/state.test.js",
+    "test:dist": "node --test tests/dist.test.js",
+    "test:e2e": "node tests/browser-e2e.mjs",
+    "verify": "npm run audit:public && npm test && npm run build && npm run test:dist && npm run audit:public"
+  },
+  "dependencies": {
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.0.3",
+    "vite": "8.1.4"
+  }
+}

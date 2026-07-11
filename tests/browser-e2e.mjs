@@ -157,9 +157,11 @@ async function launchBrowser(locale) {
   const browserPath = findBrowser();
   const profile = await mkdtemp(join(tmpdir(), "header-patch-browser-"));
   const distPath = await realpath(distDirectory);
+  const ciArguments = process.env.CI ? ["--no-sandbox"] : [];
   const processHandle = spawn(browserPath, [
     "--headless=new",
     "--disable-gpu",
+    ...ciArguments,
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-sync",

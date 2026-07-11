@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: browser-actions/setup-chrome@v2
+        id: setup-chrome
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+      - run: npm run verify
+      - run: npm run test:e2e
+        env:
+          BROWSER_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          STRICT_LOCALES: "1"
+      - name: Check release version
+        run: node -e "const p=require('./package.json'); if ('v'+p.version !== process.env.GITHUB_REF_NAME) process.exit(1)"
+      - name: Package extension
+        run: |
+          cd dist
+          zip -r "../header-patch-${GITHUB_REF_NAME}.zip" .
+          cd ..
+          sha256sum "header-patch-${GITHUB_REF_NAME}.zip" > "header-patch-${GITHUB_REF_NAME}.zip.sha256"
+      - name: Publish GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" "header-patch-${GITHUB_REF_NAME}.zip" "header-patch-${GITHUB_REF_NAME}.zip.sha256" --generate-notes --title "Header Patch $GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}

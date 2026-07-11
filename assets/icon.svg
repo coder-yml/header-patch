@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Header Patch icon">
+  <rect x="5" y="5" width="118" height="118" rx="29" fill="#171b22" stroke="#2d3440" stroke-width="2"/>
+  <rect x="31" y="35" width="65" height="8" rx="4" fill="#f5f7fb"/>
+  <rect x="31" y="61" width="47" height="8" rx="4" fill="#f5f7fb"/>
+  <rect x="31" y="87" width="65" height="8" rx="4" fill="#f5f7fb"/>
+  <circle cx="88" cy="64" r="11" fill="#3b73f1"/>
+  <circle cx="88" cy="64" r="4" fill="#f8faff"/>
+</svg>

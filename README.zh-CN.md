@@ -4,6 +4,10 @@
 
 Header Patch 是一个适用于 Chrome 和 Edge 的轻量级 Manifest V3 扩展，用于写入或覆盖浏览器请求 Header。规则保存在浏览器本地，修改后立即生效。
 
+<p align="center">
+  <img src="docs/images/header-patch-example.png" alt="Header Patch 插件示例" width="760">
+</p>
+
 ## 功能
 
 - 为 HTTP 和 HTTPS 资源设置请求 Header。

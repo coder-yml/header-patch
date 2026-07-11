@@ -4,6 +4,10 @@
 
 Header Patch is a small Manifest V3 extension for Chrome and Edge that sets or overwrites request headers. Rules are saved locally and applied immediately.
 
+<p align="center">
+  <img src="docs/images/header-patch-example.png" alt="Header Patch extension example" width="760">
+</p>
+
 ## Features
 
 - Set request headers for HTTP and HTTPS resources.

@@ -17,8 +17,9 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
+    "publish:edge": "node scripts/publish-edge.mjs",
     "audit:public": "node scripts/check-public.mjs",
-    "test": "node --test tests/i18n.test.js tests/rules.test.js tests/state.test.js",
+    "test": "node --test tests/edge-publish.test.js tests/i18n.test.js tests/rules.test.js tests/state.test.js",
     "test:dist": "node --test tests/dist.test.js",
     "test:e2e": "node tests/browser-e2e.mjs",
     "verify": "npm run audit:public && npm test && npm run build && npm run test:dist && npm run audit:public"

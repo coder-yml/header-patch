@@ -52,6 +52,8 @@ npm run test:e2e
 
 浏览器测试会自行启动仅监听 localhost 的服务以及隔离的 Chrome 或 Edge 配置。浏览器不在标准路径时可设置 `BROWSER_PATH`，测试不依赖任何外部站点。
 
+版本标签会生成经过验证的 ZIP 和 GitHub Release。首次 Edge 提交人工审核并上架后，同一工作流还可以通过 Edge Add-ons API 自动提交后续更新，配置方式见 [Microsoft Edge 自动更新](docs/edge-publishing.md)。
+
 ## 权限说明
 
 Header Patch 使用 `storage`、`declarativeNetRequestWithHostAccess` 和 `<all_urls>` 主机权限。由于用户配置的请求 Header 可能需要作用于任意 HTTP 或 HTTPS 页面，因此需要完整主机访问权限。扩展不包含遥测、统计或远程 API 请求。

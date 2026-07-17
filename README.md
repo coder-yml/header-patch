@@ -52,6 +52,8 @@ npm run test:e2e
 
 The browser test starts its own localhost server and isolated Chrome or Edge profiles. Set `BROWSER_PATH` when the browser executable is not in a standard location. It never needs an external test site.
 
+Version tags create a verified ZIP and GitHub Release. After the first manual Edge submission is in the store, the same workflow can also submit updates through the Edge Add-ons API. See [Automated Microsoft Edge updates](docs/edge-publishing.md).
+
 ## Permissions
 
 Header Patch requests `storage`, `declarativeNetRequestWithHostAccess`, and `<all_urls>` host access. Broad host access is required because user-defined request-header rules may target any HTTP or HTTPS page the user visits. The extension does not include telemetry, analytics, or remote API calls.

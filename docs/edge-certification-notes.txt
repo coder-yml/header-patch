@@ -1,0 +1,22 @@
+No test account, payment, subscription, remote service, or special environment is required.
+
+Purpose:
+Header Patch lets users create and manage rules that set or overwrite outgoing HTTP and HTTPS request headers.
+
+Test steps:
+1. Install the extension and open its toolbar popup.
+2. In the first rule, enter "X-Header-Patch-Test" as the header name and "enabled" as the value.
+3. Make sure the rule checkbox and master switch are enabled.
+4. Open or reload any HTTP or HTTPS webpage.
+5. Open Microsoft Edge DevTools, select Network, reload the page, and inspect an outgoing request. Request Headers should contain "X-Header-Patch-Test: enabled".
+6. Turn off the master switch and reload the page. The custom header should no longer be applied.
+7. Turn the switch on, close the popup, and reopen it. The rule remains because settings are stored locally.
+
+Additional information:
+- Individual rules can be enabled, paused, or deleted, and the plus button adds a rule.
+- When duplicate header names are enabled, the later rule takes precedence.
+- The toolbar badge shows the number of active rules.
+- The interface uses English or Simplified Chinese according to the browser language.
+- Broad host access is necessary because users can apply their own rules to any HTTP or HTTPS site.
+- The extension has no account system, analytics, telemetry, advertising, remote API, external backend, or remotely executed code.
+- Header names, values, and states remain in local extension storage and are not transmitted to the developer or third parties.

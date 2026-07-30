@@ -1,6 +1,7 @@
 import { buildDynamicRules, countApplicableRules } from "./rules.js";
 import { t } from "./i18n.js";
 import { normalizeState, STORAGE_KEY } from "./state.js";
+import { LANGUAGE_KEY } from "./storage.js";
 
 let pendingState = null;
 let drainPromise = null;
@@ -11,11 +12,13 @@ async function readState() {
 }
 
 async function updateBadge(state) {
+  const stored = await chrome.storage.local.get(LANGUAGE_KEY);
+  const locale = stored[LANGUAGE_KEY];
   const count = countApplicableRules(state);
-  await chrome.action.setBadgeBackgroundColor({ color: state.active ? "#265cc5" : "#7b8492" });
+  await chrome.action.setBadgeBackgroundColor({ color: state.active ? "#20242c" : "#7b8492" });
   await chrome.action.setBadgeText({ text: state.active ? (count ? String(count) : "") : "OFF" });
   await chrome.action.setTitle({
-    title: state.active ? t("badgeActive", count) : t("badgePaused")
+    title: state.active ? t("badgeActive", count, locale) : t("badgePaused", undefined, locale)
   });
 }
 
@@ -60,6 +63,10 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onStartup.addListener(() => {
   applyStoredState().catch(console.error);
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && changes[LANGUAGE_KEY]) readState().then(updateBadge).catch(console.error);
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

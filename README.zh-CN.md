@@ -12,9 +12,13 @@ Header Patch 是一个适用于 Chrome 和 Edge 的轻量级 Manifest V3 扩展�
 
 - 为 HTTP 和 HTTPS 资源设置请求 Header。
 - 单独启停规则，或通过总开关统一暂停和恢复。
-- 校验 Header 名称，并以“后面的同名规则优先”处理重复项。
+- 同 Key 达到两条时自动聚合折叠，折叠态外显当前生效项。
+- 勾选同名 Key 时自动取消其它同名项，但不会改变保存顺序。
+- 支持复制、删除、拖拽和键盘排序单条规则或整个分组。
+- 支持导入 `Key Value`、`Key=Value`、`Key:Value` 和 Key/Value 分行文本。
+- 可选择规则并以 `Key=Value` 格式复制导出，不增加剪切板权限。
 - 在弹窗和工具栏角标显示实际生效的规则数。
-- 根据浏览器语言自动显示英文或简体中文界面。
+- 首次跟随浏览器语言，并支持持久化的中英文手动切换。
 - 配置仅存储在浏览器本地，不包含统计或远程服务。
 
 ## 从源码安装
@@ -50,13 +54,13 @@ npm run verify
 npm run test:e2e
 ```
 
-浏览器测试会自行启动仅监听 localhost 的服务以及隔离的 Chrome 或 Edge 配置。浏览器不在标准路径时可设置 `BROWSER_PATH`，测试不依赖任何外部站点。
+浏览器测试会自行启动仅监听 localhost 的服务和隔离的 Chrome 配置，并阻断外部域名解析。浏览器不在标准路径时可设置 `BROWSER_PATH`，测试不依赖任何外部站点。
 
 版本标签会生成经过验证的 ZIP 和 GitHub Release。首次 Edge 提交人工审核并上架后，同一工作流还可以通过 Edge Add-ons API 自动提交后续更新，配置方式见 [Microsoft Edge 自动更新](docs/edge-publishing.md)。
 
 ## 权限说明
 
-Header Patch 使用 `storage`、`declarativeNetRequestWithHostAccess` 和 `<all_urls>` 主机权限。由于用户配置的请求 Header 可能需要作用于任意 HTTP 或 HTTPS 页面，因此需要完整主机访问权限。扩展不包含遥测、统计或远程 API 请求。
+Header Patch 使用 `storage`、`declarativeNetRequestWithHostAccess` 和 `<all_urls>` 主机权限。由于用户配置的请求 Header 可能需要作用于任意 HTTP 或 HTTPS 页面，因此需要完整主机访问权限。导出仅在用户点击时执行复制，不申请剪切板权限。扩展不包含遥测、统计或远程 API 请求。
 
 Header 值可能包含敏感信息。请只添加你理解并信任的内容，不再需要时及时删除规则。详细说明见 [PRIVACY.md](PRIVACY.md)。
 
@@ -64,7 +68,6 @@ Header 值可能包含敏感信息。请只添加你理解并信任的内容，�
 
 - `src/`：弹窗、状态、校验、存储和后台脚本。
 - `public/`：Manifest、多语言文案和运行时图标。
-- `assets/icon.svg`：可编辑的图标源文件。
 - `tests/`：单元、构建、多语言和隔离浏览器测试。
 
 ## 许可证

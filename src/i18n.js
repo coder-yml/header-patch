@@ -1,87 +1,173 @@
-const FALLBACK_MESSAGES = {
+export const MESSAGES = {
   en: {
     extensionName: "Header Patch",
     extensionDescription: "Set or overwrite browser request headers in real time.",
+    appLabel: "Header Patch extension popup",
     tagline: "Request headers for Chrome · Edge",
     loading: "Loading rules…",
     loadingLabel: "Loading Header Patch",
-    enableRule: "Enable this rule",
-    deleteRule: "Delete this rule",
-    deleteRuleTitle: "Delete rule",
+    switchLanguage: "Switch to Chinese",
+    expandAll: "Expand all",
+    collapseAll: "Collapse all",
+    noExpandableGroups: "No groups to expand",
+    enableRule: "Enable this Header",
+    deleteRule: "Delete this Header",
+    deleteRuleTitle: "Delete Header",
+    copyRule: "Duplicate this Header",
     headerName: "Header name",
     headerValue: "Header value",
-    enableAll: "Enable all header rules",
+    enableAll: "Enable all Headers",
     masterSwitch: "Master switch",
     appliedCount: "$1 active",
-    appliedCountTitle: "$1 request header rules active",
-    emptyState: "No rules yet. Use the button below to add one.",
-    addRule: "Add a header rule",
-    addRuleTitle: "Add rule",
-    readFailed: "Could not load saved rules. Defaults are in use.",
+    appliedCountTitle: "$1 request Header rules active",
+    emptyState: "No Headers yet. Click “＋” below to add one.",
+    addRule: "Add Header",
+    addRuleTitle: "Add Header",
+    importHeaders: "Import Headers",
+    exportHeaders: "Export Headers",
+    noExportableHeaders: "No Headers to export",
+    readFailed: "Could not load saved rules. A clean state is in use.",
     saveFailed: "Could not save rules",
-    ruleDeleted: "Rule deleted",
-    ruleAdded: "Rule added",
-    allEnabled: "All header rules enabled",
-    allPaused: "All header rules paused",
-    missingHeaderName: "Enter a header name",
-    invalidHeaderName: "The header name contains invalid characters",
-    duplicateHeader: "Duplicate header: the later $1 rule takes precedence",
+    missingHeaderName: "Enter a Header name",
+    invalidHeaderName: "The Header name contains invalid characters",
+    duplicateHeader: "Only one matching Header can be active",
     badgeActive: "Header Patch · $1 request rules active",
     badgePaused: "Header Patch · Paused",
-    backgroundSaveFailed: "Background save failed"
+    backgroundSaveFailed: "Background save failed",
+    dragGroup: "Drag the whole group to reorder, or press the Up or Down arrow key",
+    dragItem: "Drag this item to reorder, or press the Up or Down arrow key",
+    movedTo: "Moved to position {position} of {total}",
+    deleteEntireGroup: "Delete entire group",
+    deleteGroup: "Delete the entire {key} group",
+    groupSummary: "{key}, {count} items, {enabled}; {action}",
+    oneEnabled: "1 enabled",
+    noneEnabled: "none enabled",
+    collapse: "collapse matching Headers",
+    expand: "expand matching Headers",
+    groupCount: "{count} matching Headers",
+    close: "Close",
+    closeImport: "Close import",
+    closeExport: "Close export",
+    headerContent: "Header content",
+    importPlaceholder: "Key on one line\nValue on the next line\n\nOr:\nKey Value\nKey=Value\nKey:Value",
+    importHint: "Supports Key Value, Key=Value, Key:Value, or Key and Value on separate lines.",
+    importAction: "Import",
+    importEmpty: "Enter Header content",
+    missingValue: "Line {line} is missing its Value",
+    importedCount: "Imported {count}",
+    chooseExportHeaders: "Choose Headers to export",
+    selectAll: "Select all",
+    selectionSummary: "Selected {selected} / {total}",
+    exportHint: "Headers with the same Key are grouped. Expand a group to select individual items.",
+    exportListLabel: "Exportable Headers",
+    selectGroupAll: "Select all {count} in the {key} group",
+    expandExportGroup: "Expand the {key} group, {count} items",
+    collapseExportGroup: "Collapse the {key} group, {count} items",
+    exportOptionLabel: "Export {key}, value {value}",
+    enabled: "Enabled",
+    disabled: "Disabled",
+    emptyValue: "Empty value",
+    copyToClipboard: "Copy to clipboard",
+    copying: "Copying…",
+    copiedCount: "Copied to clipboard ({count})",
+    copyFailed: "Copy failed. Check clipboard access and try again."
   },
-  zh: {
+  "zh-CN": {
     extensionName: "Header Patch",
     extensionDescription: "实时写入或覆盖浏览器请求 Header。",
+    appLabel: "Header Patch 插件弹窗",
     tagline: "适用于 Chrome · Edge 的请求头",
     loading: "正在读取规则…",
     loadingLabel: "正在加载 Header Patch",
-    enableRule: "启用此规则",
-    deleteRule: "删除此规则",
-    deleteRuleTitle: "删除规则",
+    switchLanguage: "切换为英文",
+    expandAll: "全部展开",
+    collapseAll: "全部收起",
+    noExpandableGroups: "暂无可展开的分组",
+    enableRule: "启用此 Header",
+    deleteRule: "删除此 Header",
+    deleteRuleTitle: "删除 Header",
+    copyRule: "复制此 Header",
     headerName: "Header 名称",
     headerValue: "Header 值",
-    enableAll: "启用全部 Header 规则",
+    enableAll: "启用全部 Header",
     masterSwitch: "总开关",
     appliedCount: "$1 条生效",
     appliedCountTitle: "$1 条请求 Header 规则生效",
-    emptyState: "暂无规则，点击下方“＋”添加一条。",
-    addRule: "添加 Header 规则",
-    addRuleTitle: "添加规则",
-    readFailed: "读取配置失败，已使用默认规则",
+    emptyState: "暂无 Header，点击下方“＋”添加。",
+    addRule: "添加 Header",
+    addRuleTitle: "添加 Header",
+    importHeaders: "导入 Header",
+    exportHeaders: "导出 Header",
+    noExportableHeaders: "暂无可导出的 Header",
+    readFailed: "读取配置失败，已使用空白状态",
     saveFailed: "规则保存失败",
-    ruleDeleted: "已删除规则",
-    ruleAdded: "已新增规则",
-    allEnabled: "已启用全部 Header 规则",
-    allPaused: "已暂停全部 Header 规则",
     missingHeaderName: "请填写 Header 名称",
     invalidHeaderName: "Header 名称包含非法字符",
-    duplicateHeader: "重复 Header：后面的 $1 规则将覆盖此项",
+    duplicateHeader: "同名 Header 同时只能启用一条",
     badgeActive: "Header Patch · $1 条请求规则生效",
     badgePaused: "Header Patch · 已暂停",
-    backgroundSaveFailed: "后台保存失败"
+    backgroundSaveFailed: "后台保存失败",
+    dragGroup: "拖动整个分组排序，或按上下方向键移动",
+    dragItem: "拖动此项排序，或按上下方向键移动",
+    movedTo: "已移动到第 {position} 项，共 {total} 项",
+    deleteEntireGroup: "删除整个分组",
+    deleteGroup: "删除 {key} 整个分组",
+    groupSummary: "{key}，共 {count} 项，{enabled}，{action}",
+    oneEnabled: "1 条已启用",
+    noneEnabled: "均未启用",
+    collapse: "收起同名 Header",
+    expand: "展开同名 Header",
+    groupCount: "{count} 条同名 Header",
+    close: "关闭",
+    closeImport: "关闭导入",
+    closeExport: "关闭导出",
+    headerContent: "Header 内容",
+    importPlaceholder: "一行 Key\n下一行 Value\n\n或：\nKey Value\nKey=Value\nKey:Value",
+    importHint: "支持 Key Value、Key=Value、Key:Value，或将 Key 与 Value 分成两行。",
+    importAction: "导入",
+    importEmpty: "请输入 Header 内容",
+    missingValue: "第 {line} 行缺少对应的 Value",
+    importedCount: "已导入 {count}",
+    chooseExportHeaders: "选择并导出 Header",
+    selectAll: "全选",
+    selectionSummary: "已选 {selected} / {total} 项",
+    exportHint: "相同 Key 已聚合，点击分组展开后可逐项选择。",
+    exportListLabel: "可导出的 Header",
+    selectGroupAll: "选择 {key} 分组的全部 {count} 项",
+    expandExportGroup: "展开 {key} 分组，共 {count} 项",
+    collapseExportGroup: "收起 {key} 分组，共 {count} 项",
+    exportOptionLabel: "导出 {key}，值 {value}",
+    enabled: "已启用",
+    disabled: "未启用",
+    emptyValue: "空值",
+    copyToClipboard: "复制到剪切板",
+    copying: "正在复制…",
+    copiedCount: "已复制到剪切板（{count}）",
+    copyFailed: "复制失败，请检查剪切板权限后重试。"
   }
 };
 
-const normalizeSubstitutions = (substitutions) => {
-  if (substitutions === undefined) return [];
-  return (Array.isArray(substitutions) ? substitutions : [substitutions]).map(String);
-};
-
-const interpolate = (message, substitutions) => substitutions.reduce(
-  (result, value, index) => result.replaceAll(`$${index + 1}`, value),
-  message
-);
-
-function fallbackLocale() {
-  const language = globalThis.navigator?.language || "en";
-  return language.toLowerCase().startsWith("zh") ? "zh" : "en";
+export function browserLocale() {
+  const language = globalThis.chrome?.i18n?.getUILanguage?.()
+    || globalThis.navigator?.language
+    || "en";
+  return language.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
 }
 
-export function t(key, substitutions) {
-  const values = normalizeSubstitutions(substitutions);
-  const extensionMessage = globalThis.chrome?.i18n?.getMessage?.(key, values);
-  if (extensionMessage) return extensionMessage;
-  const message = FALLBACK_MESSAGES[fallbackLocale()][key] || FALLBACK_MESSAGES.en[key] || key;
-  return interpolate(message, values);
+function substitutions(values) {
+  if (values === undefined) return { ordered: [], named: {} };
+  if (Array.isArray(values)) return { ordered: values.map(String), named: {} };
+  if (values && typeof values === "object") return { ordered: [], named: values };
+  return { ordered: [String(values)], named: {} };
+}
+
+export function t(key, values, locale = browserLocale()) {
+  const language = locale === "zh-CN" ? "zh-CN" : "en";
+  const message = MESSAGES[language][key] || MESSAGES.en[key] || key;
+  const { ordered, named } = substitutions(values);
+  let result = ordered.reduce((text, value, index) => text.replaceAll(`$${index + 1}`, value), message);
+  Object.entries(named).forEach(([name, value]) => {
+    result = result.replaceAll(`{${name}}`, String(value));
+  });
+  return result;
 }

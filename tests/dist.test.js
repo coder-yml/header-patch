@@ -12,7 +12,7 @@ test("production build contains a loadable localized Manifest V3 extension", asy
 
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.name, "__MSG_extensionName__");
-  assert.equal(manifest.version, "1.0.0");
+  assert.equal(manifest.version, "1.0.1");
   assert.equal(manifest.default_locale, "en");
   assert.equal(manifest.action.default_popup, "index.html");
   assert.equal(manifest.action.default_icon[16], "icons/icon-16.png");
@@ -21,6 +21,7 @@ test("production build contains a loadable localized Manifest V3 extension", asy
   assert.equal(manifest.background.type, "module");
   assert.ok(manifest.permissions.includes("storage"));
   assert.ok(manifest.permissions.includes("declarativeNetRequestWithHostAccess"));
+  assert.equal(manifest.permissions.includes("clipboardWrite"), false);
   assert.deepEqual(manifest.host_permissions, ["<all_urls>"]);
   assert.match(popup, /assets\/popup-[^"']+\.js/);
   assert.match(popup, /assets\/popup-[^"']+\.css/);

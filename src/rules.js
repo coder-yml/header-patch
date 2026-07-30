@@ -19,6 +19,36 @@ export function isValidHeaderName(value) {
   return HEADER_NAME_PATTERN.test(value.trim());
 }
 
+export function normalizeHeaderKey(value) {
+  return value.trim().toLocaleLowerCase("en-US");
+}
+
+export function replaceHeaderRule(rules, nextRule) {
+  if (!rules.some((rule) => rule.id === nextRule.id)) return rules;
+  const selectedKey = nextRule.enabled ? normalizeHeaderKey(nextRule.key) : "";
+
+  return rules.map((rule) => {
+    if (rule.id === nextRule.id) return nextRule;
+    if (selectedKey && rule.enabled && normalizeHeaderKey(rule.key) === selectedKey) {
+      return { ...rule, enabled: false };
+    }
+    return rule;
+  });
+}
+
+export function enforceExclusiveEnabledRules(rules) {
+  const enabledKeys = new Set();
+
+  return rules.toReversed().map((rule) => {
+    if (!rule.enabled) return rule;
+    const key = normalizeHeaderKey(rule.key);
+    if (!key) return rule;
+    if (enabledKeys.has(key)) return { ...rule, enabled: false };
+    enabledKeys.add(key);
+    return rule;
+  }).reverse();
+}
+
 export function analyzeHeaderRules(rules) {
   const candidates = [];
   const issues = new Map();
@@ -35,7 +65,7 @@ export function analyzeHeaderRules(rules) {
       return;
     }
 
-    candidates.push({ index, rule, header, normalizedKey: header.toLowerCase() });
+    candidates.push({ index, rule, header, normalizedKey: normalizeHeaderKey(header) });
   });
 
   const lastIndexByHeader = new Map(

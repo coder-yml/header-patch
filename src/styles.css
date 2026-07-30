@@ -438,6 +438,7 @@ button { color: inherit; }
 
 .extension-runtime body { width: 652px; }
 .extension-runtime .page { min-height: auto; }
+.extension-runtime .extension { max-height: 544px; }
 
 @media (max-width: 520px) {
   body { background: var(--surface); }

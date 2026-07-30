@@ -220,6 +220,17 @@ async function closePage(browser, page) {
   if (!response.ok) throw new Error(`Could not close target: ${response.status}`);
 }
 
+async function waitForNewTarget(browser, existingIds, predicate, timeout = 5000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const targets = await json(browser, "/json/list");
+    const target = targets.find((candidate) => !existingIds.has(candidate.id) && predicate(candidate));
+    if (target) return target;
+    await sleep(50);
+  }
+  throw new Error("Timed out waiting for browser target");
+}
+
 async function waitForSelector(session, selector, timeout = 5000) {
   await session.evaluate(`new Promise((resolvePromise, reject) => {
     const deadline = Date.now() + ${timeout};
@@ -292,8 +303,8 @@ async function seedStorage(browser, state) {
   const page = await createPage(browser, popupUrl);
   await page.session.navigate(popupUrl);
   await waitForSelector(page.session, ".empty-state");
-  await page.session.evaluate(`chrome.storage.local.set({ "header-patch:state:v1": ${JSON.stringify(state)} })`);
-  await sleep(100);
+  const response = await page.session.evaluate(`chrome.runtime.sendMessage({ type: "SAVE_STATE", state: ${JSON.stringify(state)} })`);
+  assert.equal(response?.ok, true, `Could not seed extension state: ${JSON.stringify(response)}`);
   return page;
 }
 
@@ -560,6 +571,57 @@ async function runUpgradeFlow(browser, origin, requestedLocale) {
   await closePage(browser, seedPage);
 }
 
+async function verifyActionPopupLayout(browser) {
+  const popupUrl = `chrome-extension://${browser.extensionId}/index.html`;
+  const controller = await createPage(browser, popupUrl);
+  await controller.session.navigate(popupUrl);
+  await waitForSelector(controller.session, ".extension:not(.loading)");
+  const saveResponse = await controller.session.evaluate(`chrome.runtime.sendMessage({ type: "SAVE_STATE", state: {
+    version: 1,
+    active: true,
+    rules: Array.from({ length: 6 }, (_, index) => ({
+      id: "runtime-group-" + index,
+      enabled: index === 3,
+      key: index % 2 ? "x-runtime-group" : "X-Runtime-Group",
+      value: "value-" + index
+    }))
+  } })`);
+  assert.equal(saveResponse?.ok, true, `Could not seed action popup state: ${JSON.stringify(saveResponse)}`);
+  const existingIds = new Set((await json(browser, "/json/list")).map((target) => target.id));
+  const opened = await controller.session.evaluate(`chrome.action.openPopup().then(() => true, () => false)`);
+  assert.equal(opened, true, "The browser action popup did not open");
+  const target = await waitForNewTarget(browser, existingIds, (candidate) => candidate.url === popupUrl);
+  const session = await new CdpSession(target.webSocketDebuggerUrl).connect();
+  await session.send("Page.enable");
+  await session.send("Runtime.enable");
+  await session.send("Network.enable");
+  await waitForSelector(session, ".rule-group .rule.is-group-collapsed");
+  const layout = await session.evaluate(`(() => {
+    const extension = document.querySelector(".extension").getBoundingClientRect();
+    const rules = document.querySelector(".rules-panel").getBoundingClientRect();
+    const row = document.querySelector(".rule").getBoundingClientRect();
+    return {
+      viewport: [innerWidth, innerHeight],
+      extension: [extension.width, extension.height],
+      rulesHeight: rules.height,
+      row: [row.top, row.bottom],
+      visibleId: document.querySelector(".rule").dataset.ruleId,
+      groupCount: document.querySelector(".group-count").textContent.trim()
+    };
+  })()`);
+  assert.ok(layout.viewport[0] >= 640 && layout.viewport[0] <= 652, `Unexpected action popup width: ${JSON.stringify(layout)}`);
+  assert.ok(layout.rulesHeight >= 50, `Action popup rules area is compressed: ${JSON.stringify(layout)}`);
+  assert.ok(layout.row[0] >= 0 && layout.row[1] <= layout.viewport[1], `Action popup row is clipped: ${JSON.stringify(layout)}`);
+  assert.equal(layout.visibleId, "runtime-group-3");
+  assert.equal(layout.groupCount, "6");
+  await session.screenshot(join(resultsDirectory, "popup-action-runtime.png"));
+  assertLocalRequests(session);
+  session.close();
+  const response = await fetch(`${browser.cdpOrigin}/json/close/${target.id}`);
+  if (!response.ok) throw new Error(`Could not close action popup target: ${response.status}`);
+  await closePage(browser, controller);
+}
+
 if (!existsSync(join(distDirectory, "manifest.json"))) throw new Error("Build output is missing. Run npm run build before npm run test:e2e.");
 await mkdir(resultsDirectory, { recursive: true });
 const server = await startLocalServer();
@@ -568,6 +630,7 @@ try {
     const browser = await launchBrowser(locale);
     try {
       await flow(browser, server.origin, locale);
+      if (locale === "en-US") await verifyActionPopupLayout(browser);
       console.log(`${locale} browser flow: PASS`);
     } finally {
       await stopBrowser(browser);

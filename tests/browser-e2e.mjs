@@ -274,20 +274,13 @@ async function resolveLocale(session, requested) {
 }
 
 async function seedStorage(browser, state) {
-  const deadline = Date.now() + 10000;
-  while (Date.now() < deadline) {
-    const targets = await json(browser, "/json/list");
-    const worker = targets.find((target) => target.type === "service_worker" && target.url.startsWith(`chrome-extension://${browser.extensionId}/`));
-    if (worker) {
-      const session = await new CdpSession(worker.webSocketDebuggerUrl).connect();
-      await session.send("Runtime.enable");
-      await session.evaluate(`chrome.storage.local.set({ "header-patch:state:v1": ${JSON.stringify(state)} })`);
-      session.close();
-      return;
-    }
-    await sleep(100);
-  }
-  throw new Error("Extension service worker did not start");
+  const popupUrl = `chrome-extension://${browser.extensionId}/index.html`;
+  const page = await createPage(browser, popupUrl);
+  await page.session.navigate(popupUrl);
+  await waitForSelector(page.session, ".empty-state");
+  await page.session.evaluate(`chrome.storage.local.set({ "header-patch:state:v1": ${JSON.stringify(state)} })`);
+  await sleep(100);
+  return page;
 }
 
 async function runMainFlow(browser, origin, requestedLocale) {
@@ -500,7 +493,7 @@ async function runUpgradeFlow(browser, origin, requestedLocale) {
       { id: "legacy-last", enabled: true, key: "x-legacy", value: "last" }
     ] }
   };
-  await seedStorage(browser, legacyState);
+  const seedPage = await seedStorage(browser, legacyState);
   const popupUrl = `chrome-extension://${browser.extensionId}/index.html`;
   const popup = await createPage(browser, popupUrl);
   await popup.session.send("Emulation.setDeviceMetricsOverride", { width: 652, height: 600, deviceScaleFactor: 1, mobile: false });
@@ -525,6 +518,7 @@ async function runUpgradeFlow(browser, origin, requestedLocale) {
   assertLocalRequests(networkPage.session);
   await closePage(browser, networkPage);
   await closePage(browser, popup);
+  await closePage(browser, seedPage);
 }
 
 if (!existsSync(join(distDirectory, "manifest.json"))) throw new Error("Build output is missing. Run npm run build before npm run test:e2e.");

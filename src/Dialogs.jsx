@@ -1,18 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { buildRuleGroups } from "./groups.js";
-import { ChevronIcon, CloseIcon, StackIcon } from "./icons.jsx";
+import { CloseIcon } from "./icons.jsx";
 import { copyText, exportableRules, parseImportedHeaders, serializeRules } from "./transfer.js";
 
 function useDialog(open, dialogRef, onClose) {
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (open && !dialog.open) dialog.showModal();
     if (!open && dialog.open) dialog.close();
-    const close = () => onClose();
+    const close = () => onCloseRef.current();
     dialog.addEventListener("close", close);
     return () => dialog.removeEventListener("close", close);
-  }, [open, dialogRef, onClose]);
+  }, [open, dialogRef]);
 }
 
 function closeOnBackdrop(event) {
@@ -26,7 +28,7 @@ export function ImportDialog({ open, tr, onClose, onImport }) {
   const [error, setError] = useState("");
   useDialog(open, dialogRef, onClose);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     setContent("");
     setError("");
@@ -45,31 +47,29 @@ export function ImportDialog({ open, tr, onClose, onImport }) {
   };
 
   return (
-    <dialog ref={dialogRef} className="dialog import-dialog" aria-labelledby="import-title" aria-describedby="import-hint" onClick={closeOnBackdrop}>
-      <div className="dialog-card">
-        <header className="dialog-header">
+    <dialog ref={dialogRef} className="import-dialog" aria-labelledby="import-title" onClick={closeOnBackdrop}>
+      <section className="import-dialog-card">
+        <header className="import-dialog-header">
           <h2 id="import-title">{tr("importHeaders")}</h2>
-          <button className="icon-button" type="button" aria-label={tr("closeImport")} title={tr("close")} onClick={() => dialogRef.current?.close()}><CloseIcon /></button>
+          <button className="icon-button import-close" type="button" aria-label={tr("closeImport")} title={tr("close")} onClick={() => dialogRef.current?.close()}><CloseIcon /></button>
         </header>
-        <div className="dialog-body">
-          <label className="dialog-label" htmlFor="import-content">{tr("headerContent")}</label>
-          <textarea
-            ref={textRef}
-            id="import-content"
-            value={content}
-            placeholder={tr("importPlaceholder")}
-            aria-invalid={Boolean(error)}
-            aria-describedby={error ? "import-error import-hint" : "import-hint"}
-            onChange={(event) => { setContent(event.target.value); if (error) setError(""); }}
-          />
-          <p id="import-hint" className="dialog-hint">{tr("importHint")}</p>
-          <p id="import-error" className="dialog-error" role="alert">{error}</p>
+        <label className="import-label" htmlFor="import-content">{tr("headerContent")}</label>
+        <textarea
+          ref={textRef}
+          className="import-textarea"
+          id="import-content"
+          value={content}
+          placeholder={tr("importPlaceholder")}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? "import-error import-hint" : "import-hint"}
+          onChange={(event) => { setContent(event.target.value); if (error) setError(""); }}
+        />
+        <p id="import-hint" className="import-hint">{tr("importHint")}</p>
+        {error && <p id="import-error" className="import-error" role="alert">{error}</p>}
+        <div className="import-dialog-actions">
+          <button className="import-submit" type="button" onClick={submit}>{tr("importAction")}</button>
         </div>
-        <footer className="dialog-footer">
-          <button className="secondary-button" type="button" onClick={() => dialogRef.current?.close()}>{tr("close")}</button>
-          <button className="primary-button" type="button" onClick={submit}>{tr("importAction")}</button>
-        </footer>
-      </div>
+      </section>
     </dialog>
   );
 }
@@ -93,8 +93,8 @@ function ExportOption({ rule, selected, busy, tr, onChange, grouped = false }) {
         onChange={(event) => onChange(rule.id, event.target.checked)}
       />
       <span className="export-option-copy">
-        {!grouped && <strong>{rule.key.trim()}</strong>}
-        <span>{displayValue}</span>
+        {!grouped && <span className="export-option-key">{rule.key.trim()}</span>}
+        <span className={`export-option-value${grouped ? " export-option-value-primary" : ""}`}>{displayValue}</span>
       </span>
       <span className={`export-option-state${rule.enabled ? " is-enabled" : ""}`}>{tr(rule.enabled ? "enabled" : "disabled")}</span>
     </label>
@@ -111,7 +111,7 @@ export function ExportDialog({ open, rules, tr, onClose, onSuccess }) {
   const [error, setError] = useState("");
   useDialog(open, dialogRef, onClose);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     setSelected(new Set(candidates.map((rule) => rule.id)));
     setExpanded(new Set());
@@ -146,27 +146,26 @@ export function ExportDialog({ open, rules, tr, onClose, onSuccess }) {
   };
 
   return (
-    <dialog ref={dialogRef} className="dialog export-dialog" aria-labelledby="export-title" aria-describedby="export-hint" onClick={closeOnBackdrop}>
-      <div className="dialog-card">
-        <header className="dialog-header">
-          <h2 id="export-title">{tr("chooseExportHeaders")}</h2>
-          <button className="icon-button" type="button" disabled={busy} aria-label={tr("closeExport")} title={tr("close")} onClick={() => dialogRef.current?.close()}><CloseIcon /></button>
+    <dialog ref={dialogRef} className="export-dialog" aria-labelledby="export-title" aria-describedby="export-hint" onClick={closeOnBackdrop}>
+      <section className="export-dialog-card">
+        <header className="export-dialog-header">
+          <h2 id="export-title">{tr("exportHeaders")}</h2>
+          <button className="icon-button export-close" type="button" disabled={busy} aria-label={tr("closeExport")} title={tr("close")} onClick={() => dialogRef.current?.close()}><CloseIcon /></button>
         </header>
-        <div className="dialog-body">
-          <div className="export-summary">
-            <label className="select-all">
-              <SelectBox
-                checked={allSelected}
-                indeterminate={selectedCount > 0 && !allSelected}
-                disabled={busy}
-                onChange={(event) => updateSelection(candidates.map((rule) => rule.id), event.target.checked)}
-              />
-              {tr("selectAll")}
-            </label>
-            <span>{tr("selectionSummary", { selected: selectedCount, total: candidates.length })}</span>
-          </div>
-          <p id="export-hint" className="dialog-hint">{tr("exportHint")}</p>
-          <div className="export-list" role="group" aria-label={tr("exportListLabel")} aria-busy={busy}>
+        <div className="export-toolbar">
+          <label className="export-select-all">
+            <SelectBox
+              checked={allSelected}
+              indeterminate={selectedCount > 0 && !allSelected}
+              disabled={busy}
+              onChange={(event) => updateSelection(candidates.map((rule) => rule.id), event.target.checked)}
+            />
+            {tr("selectAll")}
+          </label>
+          <span className="export-selection-summary" aria-live="polite">{tr("selectionSummary", { selected: selectedCount, total: candidates.length })}</span>
+        </div>
+        <p id="export-hint" className="export-hint">{tr("exportHint")}</p>
+        <div className="export-list" role="group" aria-label={tr("exportListLabel")} aria-busy={busy}>
             {groups.map((group) => {
               if (group.rules.length === 1) {
                 const rule = group.rules[0];
@@ -179,14 +178,16 @@ export function ExportDialog({ open, rules, tr, onClose, onSuccess }) {
               return (
                 <section className="export-group" key={group.key}>
                   <header className="export-group-header">
-                    <SelectBox
-                      className="export-group-input"
-                      checked={count === ids.length}
-                      indeterminate={count > 0 && count < ids.length}
-                      disabled={busy}
-                      aria-label={tr("selectGroupAll", { key: group.rules[0].key.trim(), count: ids.length })}
-                      onChange={(event) => updateSelection(ids, event.target.checked)}
-                    />
+                    <label className="export-group-select">
+                      <SelectBox
+                        className="export-group-input"
+                        checked={count === ids.length}
+                        indeterminate={count > 0 && count < ids.length}
+                        disabled={busy}
+                        aria-label={tr("selectGroupAll", { key: group.rules[0].key.trim(), count: ids.length })}
+                        onChange={(event) => updateSelection(ids, event.target.checked)}
+                      />
+                    </label>
                     <button
                       className="export-group-toggle"
                       type="button"
@@ -200,9 +201,8 @@ export function ExportDialog({ open, rules, tr, onClose, onSuccess }) {
                         return next;
                       })}
                     >
-                      <span>{group.rules[0].key.trim()}</span>
-                      <span className="group-count"><StackIcon />{ids.length}</span>
-                      <ChevronIcon />
+                      <span className="export-group-key">{group.rules[0].key.trim()}</span>
+                      <span className="export-group-count">{ids.length}</span>
                     </button>
                   </header>
                   <div className="export-group-items" id={contentId} hidden={!isExpanded}>
@@ -211,14 +211,12 @@ export function ExportDialog({ open, rules, tr, onClose, onSuccess }) {
                 </section>
               );
             })}
-          </div>
-          <p className="dialog-error" role="alert">{error}</p>
         </div>
-        <footer className="dialog-footer">
-          <button className="secondary-button" type="button" disabled={busy} onClick={() => dialogRef.current?.close()}>{tr("close")}</button>
-          <button className="primary-button" type="button" disabled={busy || selectedCount === 0} aria-busy={busy} onClick={copy}>{busy ? tr("copying") : tr("copyToClipboard")}</button>
-        </footer>
-      </div>
+        {error && <p className="export-error" role="alert">{error}</p>}
+        <div className="export-dialog-actions">
+          <button className="export-submit" type="button" disabled={busy || selectedCount === 0} aria-busy={busy} onClick={copy}>{busy ? tr("copying") : tr("copyToClipboard")}</button>
+        </div>
+      </section>
     </dialog>
   );
 }

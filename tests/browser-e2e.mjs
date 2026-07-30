@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, extname, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -87,15 +87,29 @@ class CdpSession {
 }
 
 function findBrowser() {
+  const cached = [];
+  for (const root of [join(homedir(), "Library/Caches/ms-playwright"), join(homedir(), ".cache/ms-playwright"), join(homedir(), ".cache/puppeteer/chrome")]) {
+    if (!existsSync(root)) continue;
+    const stack = [root];
+    while (stack.length) {
+      const directory = stack.pop();
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) stack.push(path);
+        else if (entry.isFile() && (
+          path.endsWith("Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing")
+          || /chrome-(?:linux|linux64)[^/]*\/chrome$/.test(path)
+        )) cached.push(path);
+      }
+    }
+  }
   const candidates = [
     process.env.BROWSER_PATH,
     "/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/usr/bin/google-chrome",
-    "/usr/bin/chromium"
+    ...cached.toSorted().toReversed()
   ].filter(Boolean);
   const browser = candidates.find(existsSync);
-  if (!browser) throw new Error("No supported Chrome executable found. Set BROWSER_PATH.");
+  if (!browser) throw new Error("Chrome for Testing is required to load an unpacked extension. Set BROWSER_PATH to its executable.");
   return browser;
 }
 
@@ -292,7 +306,7 @@ async function runMainFlow(browser, origin, requestedLocale) {
   const locale = await resolveLocale(popup.session, requestedLocale);
   const expected = expectedLocales[locale];
 
-  assert.deepEqual(await popup.session.evaluate(`({
+  const initialLayout = await popup.session.evaluate(`({
     name: document.querySelector("h1").textContent,
     tagline: document.querySelector(".brand-copy p").textContent,
     count: document.querySelector(".rule-count").textContent,
@@ -300,8 +314,11 @@ async function runMainFlow(browser, origin, requestedLocale) {
     exportDisabled: document.querySelector(".footer-icon-button:last-child").disabled,
     switchLabel: document.querySelector(".switch").getAttribute("aria-label"),
     width: document.querySelector(".extension").getBoundingClientRect().width,
-    height: document.querySelector(".extension").getBoundingClientRect().height
-  })`), { name: "Header Patch", tagline: expected.tagline, count: expected.count0, rows: 0, exportDisabled: true, switchLabel: expected.switchLabel, width: 620, height: 600 });
+    height: document.querySelector(".extension").getBoundingClientRect().height,
+    brand: (() => { const mark = document.querySelector(".brand-mark"); const box = mark.getBoundingClientRect(); const style = getComputedStyle(mark); return { width: box.width, height: box.height, radius: style.borderRadius, background: style.backgroundColor, svg: mark.querySelector("svg").getBoundingClientRect().width }; })()
+  })`);
+  assert.deepEqual({ ...initialLayout, height: undefined }, { name: "Header Patch", tagline: expected.tagline, count: expected.count0, rows: 0, exportDisabled: true, switchLabel: expected.switchLabel, width: 620, height: undefined, brand: { width: 32, height: 32, radius: "9px", background: "oklch(0.19 0.014 250)", svg: 18 } });
+  assert.ok(initialLayout.height >= 260 && initialLayout.height <= 265, `Unexpected content-sized popup height: ${initialLayout.height}`);
 
   for (let index = 0; index < 3; index += 1) await popup.session.evaluate(`document.querySelector(".add-button").click()`);
   await waitForCondition(popup.session, `document.querySelectorAll(".rule").length === 3`);
@@ -323,7 +340,7 @@ async function runMainFlow(browser, origin, requestedLocale) {
   ]).then(([stored, dynamic]) => ({
     order: stored["header-patch:state:v1"].rules.map((rule) => rule.id),
     enabled: stored["header-patch:state:v1"].rules.map((rule) => rule.enabled),
-    top: [...document.querySelector(".rules").children].map((item) => item.classList.contains("rule-group") ? "group" : item.querySelector(".rule").dataset.ruleId),
+    top: [...document.querySelector(".rules").children].map((item) => item.classList.contains("rule-group") ? "group" : item.dataset.ruleId),
     collapsedVisible: document.querySelector(".rule-group .rule").dataset.ruleId,
     userAgent: dynamic[0].action.requestHeaders.find((header) => header.header.toLowerCase() === "user-agent").value
   }))`);
@@ -376,29 +393,39 @@ async function runMainFlow(browser, origin, requestedLocale) {
 
   await popup.session.evaluate(`document.querySelectorAll(".footer-icon-button")[0].click()`);
   await waitForSelector(popup.session, ".import-dialog[open]");
+  assert.deepEqual(await popup.session.evaluate(`(() => {
+    const dialog = document.querySelector(".import-dialog").getBoundingClientRect();
+    const textarea = document.querySelector(".import-textarea").getBoundingClientRect();
+    const close = document.querySelector(".import-close").getBoundingClientRect();
+    return { dialog: [dialog.width, dialog.height], textarea: [textarea.width, textarea.height], close: [close.width, close.height] };
+  })()`), { dialog: [520, 363], textarea: [486, 180], close: [44, 44] });
   await popup.session.screenshot(join(resultsDirectory, "dialog-import.png"));
   await popup.session.evaluate(setValue("#import-content", "X-Missing"));
-  await popup.session.evaluate(`document.querySelector(".import-dialog .primary-button").click()`);
+  await popup.session.evaluate(`document.querySelector(".import-dialog .import-submit").click()`);
   assert.match(await popup.session.evaluate(`document.querySelector("#import-error").textContent`), /1/);
   await popup.session.evaluate(setValue("#import-content", "X-Import=one\nX-Pair\npair value\nX-Colon: three"));
-  await popup.session.evaluate(`document.querySelector(".import-dialog .primary-button").click()`);
+  await popup.session.evaluate(`document.querySelector(".import-dialog .import-submit").click()`);
   await waitForCondition(popup.session, `!document.querySelector(".import-dialog").open`);
   assert.equal((await popup.session.evaluate(`chrome.storage.local.get("header-patch:state:v1").then((stored) => stored["header-patch:state:v1"].rules.slice(-3).every((rule) => !rule.enabled))`)), true);
 
   await popup.session.evaluate(`document.querySelectorAll(".footer-icon-button")[1].click()`);
   await waitForSelector(popup.session, ".export-dialog[open]");
+  await waitForCondition(popup.session, `!document.querySelector(".export-submit").disabled`);
+  await sleep(150);
+  assert.deepEqual(await popup.session.evaluate(`(() => { const button = document.querySelector(".export-submit"); return { disabled: button.disabled, busy: button.getAttribute("aria-busy"), background: getComputedStyle(button).backgroundColor }; })()`), { disabled: false, busy: "false", background: "oklch(0.19 0.014 250)" });
   await popup.session.screenshot(join(resultsDirectory, "dialog-export.png"));
   await popup.session.evaluate(`document.querySelector(".export-group-toggle").click()`);
   await popup.session.evaluate(`document.querySelector(".export-group-items .export-option-input").click()`);
   assert.equal(await popup.session.evaluate(`document.querySelector(".export-group-input").indeterminate`), true);
-  await popup.session.evaluate(`document.querySelector(".select-all input").click()`);
+  await popup.session.evaluate(`document.querySelector(".export-select-all input").click()`);
   await popup.session.evaluate(`(() => {
     window.__copied = "";
     try { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (value) => { window.__copied = value; } } }); } catch (_) {}
     document.execCommand = () => { window.__copied = document.activeElement.value || "fallback"; return true; };
   })()`);
-  await popup.session.evaluate(`document.querySelector(".export-dialog .primary-button").click()`);
+  await popup.session.evaluate(`document.querySelector(".export-dialog .export-submit").click()`);
   await waitForCondition(popup.session, `!document.querySelector(".export-dialog").open`);
+  await sleep(100);
   const copied = await popup.session.evaluate(`window.__copied`);
   assert.match(copied, /User-Agent=header-patch-test|user-agent=later/);
   assert.match(copied, /X-Import=one/);
@@ -408,22 +435,26 @@ async function runMainFlow(browser, origin, requestedLocale) {
   await popup.session.evaluate(`(() => {
     try { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("denied"); } } }); } catch (_) {}
     document.execCommand = () => false;
-    document.querySelector(".export-dialog .primary-button").click();
+    document.querySelector(".export-dialog .export-submit").click();
   })()`);
-  await waitForCondition(popup.session, `document.querySelector(".export-dialog .dialog-error").textContent.length > 0`);
+  await waitForCondition(popup.session, `document.querySelector(".export-dialog .export-error").textContent.length > 0`);
   assert.equal(await popup.session.evaluate(`document.querySelector(".export-dialog").open`), true);
-  await popup.session.evaluate(`document.querySelector(".export-dialog .secondary-button").click()`);
+  await popup.session.evaluate(`document.querySelector(".export-dialog .export-close").click()`);
 
   const initialLanguage = await popup.session.evaluate(`document.documentElement.lang`);
-  await popup.session.evaluate(`document.querySelector(".language-button").click()`);
-  const switchedLanguage = await popup.session.evaluate(`({ lang: document.documentElement.lang, add: document.querySelector(".add-button span").textContent })`);
+  await popup.session.evaluate(`document.querySelector(".language-toggle").click()`);
+  const switchedLanguage = await popup.session.evaluate(`({ lang: document.documentElement.lang, add: document.querySelector(".add-button").getAttribute("aria-label") })`);
   assert.deepEqual(switchedLanguage, initialLanguage === "zh-CN" ? { lang: "en", add: "Add Header" } : { lang: "zh-CN", add: "添加 Header" });
-  await popup.session.evaluate(`document.querySelector(".language-button").click()`);
+  await popup.session.evaluate(`document.querySelector(".language-toggle").click()`);
   assert.equal(await popup.session.evaluate(`chrome.storage.local.get("header-patch:locale:v1").then((stored) => stored["header-patch:locale:v1"])`), initialLanguage === "zh-CN" ? "zh-CN" : "en");
-  if (initialLanguage !== "en") await popup.session.evaluate(`document.querySelector(".language-button").click()`);
+  if (initialLanguage !== "en") await popup.session.evaluate(`document.querySelector(".language-toggle").click()`);
   assert.equal(await popup.session.evaluate(`document.documentElement.lang`), "en");
+  await sleep(1900);
+  await popup.session.evaluate(`document.querySelector(".topbar").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))`);
+  await popup.session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
+  await sleep(100);
   await popup.session.screenshot(join(resultsDirectory, "popup-docs-en.png"));
-  if (initialLanguage !== "en") await popup.session.evaluate(`document.querySelector(".language-button").click()`);
+  if (initialLanguage !== "en") await popup.session.evaluate(`document.querySelector(".language-toggle").click()`);
 
   await popup.session.evaluate(`document.querySelector(".switch").click()`);
   await sleep(200);
@@ -457,10 +488,18 @@ async function runMainFlow(browser, origin, requestedLocale) {
   for (const [width, height, name] of [[900, 760, "desktop"], [520, 700, "compact"], [360, 700, "narrow"]]) {
     await preview.session.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width <= 520 });
     await preview.session.navigate(origin);
-    await waitForSelector(preview.session, ".extension");
-    const layout = await preview.session.evaluate(`(() => { const card = document.querySelector(".extension").getBoundingClientRect(); return { width: card.width, overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth }; })()`);
+    await waitForSelector(preview.session, ".empty-state");
+    const layout = await preview.session.evaluate(`(() => {
+      const card = document.querySelector(".extension").getBoundingClientRect();
+      const topbar = document.querySelector(".topbar").getBoundingClientRect();
+      const empty = document.querySelector(".empty-state").getBoundingClientRect();
+      const add = document.querySelector(".add-button").getBoundingClientRect();
+      return { width: card.width, overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, topbar: topbar.height, empty: [empty.x, empty.width], add: add.width };
+    })()`);
     assert.equal(layout.overflow, false);
     assert.equal(layout.width, width <= 520 ? width : 620);
+    if (width === 520) assert.deepEqual({ topbar: layout.topbar, empty: layout.empty, add: layout.add }, { topbar: 119, empty: [14, 492], add: 392 });
+    if (width === 360) assert.deepEqual({ topbar: layout.topbar, empty: layout.empty, add: layout.add }, { topbar: 115, empty: [14, 332], add: 232 });
     await preview.session.screenshot(join(resultsDirectory, `preview-${name}.png`));
   }
 

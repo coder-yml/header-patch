@@ -44,7 +44,9 @@ function RuleRow({
   onKeyboardMove,
   onDragStart,
   onDragEnd,
-  onDrop
+  onDrop,
+  dropClass = "",
+  topLevelDragHandlers = null
 }) {
   const keyInput = useRef(null);
   const invalid = Boolean(issue);
@@ -58,24 +60,23 @@ function RuleRow({
   const dropHandlers = grouped && !collapsed ? {
     onDragOver: (event) => event.preventDefault(),
     onDrop: (event) => onDrop(event, payload)
-  } : {};
+  } : topLevelDragHandlers || {};
 
   return (
     <article
-      className={`rule${invalid ? " has-error" : ""}${selected ? " is-selected" : ""}${recentlyMoved ? " is-recently-moved" : ""}${collapsed ? " is-group-collapsed" : ""}`}
+      className={`rule${invalid ? " has-error" : ""}${selected ? " is-selected" : ""}${recentlyMoved ? " is-recently-moved" : ""}${collapsed ? " has-group-header is-group-collapsed" : ""}${dropClass}`}
       data-rule-id={rule.id}
       onPointerDown={() => onSelect(payload)}
       {...dropHandlers}
     >
-      {!collapsed && (
-        <DragHandle
-          label={tr("dragItem")}
-          payload={payload}
-          onKeyboardMove={onKeyboardMove}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
-        />
-      )}
+      <DragHandle
+        label={tr(collapsed ? "dragGroup" : "dragItem")}
+        payload={payload}
+        className={collapsed ? "group-drag" : "rule-drag"}
+        onKeyboardMove={onKeyboardMove}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+      />
 
       <button
         className="check"
@@ -128,7 +129,7 @@ function RuleRow({
       </div>
 
       {collapsed ? (
-        <div className="collapsed-actions">
+        <div className="rule-actions group-collapsed-actions">
           <button
             className="group-toggle"
             type="button"
@@ -144,7 +145,7 @@ function RuleRow({
           >
             <ChevronIcon />
           </button>
-          <span className="group-count" title={tr("groupCount", { count: groupCount })}><StackIcon />{groupCount}</span>
+          <span className="group-meta" aria-hidden="true"><span className="group-count" title={tr("groupCount", { count: groupCount })}><StackIcon />{groupCount}</span></span>
         </div>
       ) : (
         <div className="rule-actions">
@@ -216,37 +217,36 @@ export default function RuleList({
         if (!isGroup) {
           const payload = topPayload;
           return (
-            <div
-              className={`top-level-item${topDropClass}`}
+            <RuleRow
               key={group.rules[0].id}
-              onDragOver={(event) => {
-                if (dragging?.type === "member") return;
-                event.preventDefault();
-                setDropMark({ id: payload.ids[0], placement: placement(event) });
+              rule={group.rules[0]}
+              issue={analysis.issues.get(group.rules[0].id)}
+              tr={tr}
+              grouped={false}
+              collapsed={false}
+              shouldFocus={focusRuleId === group.rules[0].id}
+              selected={topSelected}
+              recentlyMoved={topMoved}
+              payload={payload}
+              onChange={onUpdate}
+              onRemove={() => onRemove(group.rules[0].id)}
+              onDuplicate={() => onDuplicate(group.rules[0].id)}
+              onEditing={onEditing}
+              onSelect={onSelect}
+              onKeyboardMove={keyboardMove}
+              onDragStart={dragStart}
+              onDragEnd={dragEnd}
+              onDrop={drop}
+              dropClass={topDropClass}
+              topLevelDragHandlers={{
+                onDragOver: (event) => {
+                  if (dragging?.type === "member") return;
+                  event.preventDefault();
+                  setDropMark({ id: payload.ids[0], placement: placement(event) });
+                },
+                onDrop: (event) => drop(event, payload)
               }}
-              onDrop={(event) => drop(event, payload)}
-            >
-              <RuleRow
-                rule={group.rules[0]}
-                issue={analysis.issues.get(group.rules[0].id)}
-                tr={tr}
-                grouped={false}
-                collapsed={false}
-                shouldFocus={focusRuleId === group.rules[0].id}
-                selected={topSelected}
-                recentlyMoved={topMoved}
-                payload={payload}
-                onChange={onUpdate}
-                onRemove={() => onRemove(group.rules[0].id)}
-                onDuplicate={() => onDuplicate(group.rules[0].id)}
-                onEditing={onEditing}
-                onSelect={onSelect}
-                onKeyboardMove={keyboardMove}
-                onDragStart={dragStart}
-                onDragEnd={dragEnd}
-                onDrop={drop}
-              />
-            </div>
+            />
           );
         }
 
@@ -268,10 +268,11 @@ export default function RuleList({
                 if (!event.target.closest("button")) onToggleGroup(group.key);
               }}>
                 <DragHandle label={tr("dragGroup")} payload={topPayload} className="group-drag" onKeyboardMove={keyboardMove} onDragStart={dragStart} onDragEnd={dragEnd} />
-                <button className="icon-button group-remove" type="button" aria-label={tr("deleteGroup", { key: visible.key.trim() })} title={tr("deleteEntireGroup")} onClick={() => onDeleteGroup(ruleIds)}><RemoveIcon /></button>
-                <button className="group-toggle" type="button" aria-expanded="true" aria-controls={`group-${group.key}`} onClick={() => onToggleGroup(group.key)}>
-                  <ChevronIcon /><span className="group-count"><StackIcon />{group.rules.length}</span>
-                </button>
+                <button className="icon-button group-remove" type="button" aria-label={tr("deleteGroup", { key: visible.key.trim() })} title={tr("deleteEntireGroup")} onClick={() => onDeleteGroup(ruleIds)}><RemoveIcon strokeWidth="1.6" /></button>
+                <div className="group-actions">
+                  <button className="group-toggle" type="button" aria-expanded="true" aria-controls={controlId} onClick={() => onToggleGroup(group.key)}><ChevronIcon /></button>
+                  <span className="group-meta" aria-hidden="true"><span className="group-count"><StackIcon />{group.rules.length}</span></span>
+                </div>
               </header>
             )}
             <div className="group-rule-list" id={controlId}>
@@ -301,30 +302,27 @@ export default function RuleList({
                   />
                 );
               }) : (
-                <div className="collapsed-rule-shell">
-                  <DragHandle label={tr("dragGroup")} payload={topPayload} className="group-drag" onKeyboardMove={keyboardMove} onDragStart={dragStart} onDragEnd={dragEnd} />
-                  <RuleRow
-                    rule={visible}
-                    issue={analysis.issues.get(visible.id)}
-                    tr={tr}
-                    grouped
-                    collapsed
-                    groupCount={group.rules.length}
-                    expanded={false}
-                    shouldFocus={focusRuleId === visible.id}
-                    selected={topSelected}
-                    recentlyMoved={topMoved}
-                    payload={topPayload}
-                    onChange={onUpdate}
-                    onToggleGroup={() => onToggleGroup(group.key)}
-                    onEditing={onEditing}
-                    onSelect={onSelect}
-                    onKeyboardMove={keyboardMove}
-                    onDragStart={dragStart}
-                    onDragEnd={dragEnd}
-                    onDrop={drop}
-                  />
-                </div>
+                <RuleRow
+                  rule={visible}
+                  issue={analysis.issues.get(visible.id)}
+                  tr={tr}
+                  grouped
+                  collapsed
+                  groupCount={group.rules.length}
+                  expanded={false}
+                  shouldFocus={focusRuleId === visible.id}
+                  selected={topSelected}
+                  recentlyMoved={topMoved}
+                  payload={topPayload}
+                  onChange={onUpdate}
+                  onToggleGroup={() => onToggleGroup(group.key)}
+                  onEditing={onEditing}
+                  onSelect={onSelect}
+                  onKeyboardMove={keyboardMove}
+                  onDragStart={dragStart}
+                  onDragEnd={dragEnd}
+                  onDrop={drop}
+                />
               )}
             </div>
           </section>

@@ -217,7 +217,7 @@ export default function App() {
               <div className="brand-copy"><h1>{tr("extensionName")}</h1><p>{tr("tagline")}</p></div>
             </div>
             <div className="top-actions">
-              <button className="language-button" type="button" lang={locale === "zh-CN" ? "en" : "zh-CN"} aria-label={tr("switchLanguage")} title={tr("switchLanguage")} onClick={toggleLanguage}>{locale === "zh-CN" ? "En" : "Zh"}</button>
+              <button className="language-toggle" type="button" lang={locale === "zh-CN" ? "en" : "zh-CN"} aria-label={tr("switchLanguage")} title={tr("switchLanguage")} onClick={toggleLanguage}><span aria-hidden="true">{locale === "zh-CN" ? "En" : "Zh"}</span></button>
               <button className="group-view-button" type="button" disabled={!expandableKeys.length} aria-expanded={allExpanded} title={expandableKeys.length ? tr(allExpanded ? "collapseAll" : "expandAll") : tr("noExpandableGroups")} onClick={toggleAllGroups}>{tr(allExpanded ? "collapseAll" : "expandAll")}</button>
               <span className="rule-count" title={tr("appliedCountTitle", appliedCount)}>{tr("appliedCount", appliedCount)}</span>
               <button className="switch" type="button" role="switch" aria-checked={state.active} aria-label={tr("enableAll")} title={tr("masterSwitch")} onClick={() => commitState((current) => ({ ...current, active: !current.active }))} />
@@ -248,13 +248,15 @@ export default function App() {
                 onSelect={setSelected}
                 onMove={move}
               />
-            ) : <div className="empty-state">{tr("emptyState")}</div>}
+            ) : <div className="empty-state is-visible" role="status">{tr("emptyState")}</div>}
           </section>
 
           <footer className="footer">
-            <button className="add-button" type="button" aria-label={tr("addRule")} title={tr("addRuleTitle")} onClick={addRule}><AddIcon /><span>{tr("addRule")}</span></button>
-            <button className="footer-icon-button" type="button" aria-label={tr("importHeaders")} title={tr("importHeaders")} onClick={() => setImportOpen(true)}><ImportIcon /></button>
-            <button className="footer-icon-button" type="button" disabled={!hasExportableRules} aria-label={tr(hasExportableRules ? "chooseExportHeaders" : "noExportableHeaders")} title={tr(hasExportableRules ? "exportHeaders" : "noExportableHeaders")} onClick={() => setExportOpen(true)}><ExportIcon /></button>
+            <div className="footer-actions">
+              <button className="add-button" type="button" aria-label={tr("addRule")} title={tr("addRuleTitle")} onClick={addRule}><AddIcon /></button>
+              <button className="footer-icon-button" type="button" aria-label={tr("importHeaders")} title={tr("importHeaders")} onClick={() => setImportOpen(true)}><ImportIcon /></button>
+              <button className="footer-icon-button" type="button" disabled={!hasExportableRules} aria-label={tr(hasExportableRules ? "chooseExportHeaders" : "noExportableHeaders")} title={tr(hasExportableRules ? "exportHeaders" : "noExportableHeaders")} onClick={() => setExportOpen(true)}><ExportIcon /></button>
+            </div>
           </footer>
         </section>
       </main>
@@ -262,7 +264,7 @@ export default function App() {
       <ImportDialog open={importOpen} tr={tr} onClose={() => setImportOpen(false)} onImport={importRules} />
       <ExportDialog open={exportOpen} rules={rules} tr={tr} onClose={() => setExportOpen(false)} onSuccess={(count) => showToast("copiedCount", { count })} />
       <div className="sr-only" role="status" aria-live="polite">{moveAnnouncement}</div>
-      <div className={`toast${toast ? " is-visible" : ""}${toast?.type === "error" ? " is-error" : ""}`} role={toast?.type === "error" ? "alert" : "status"} aria-live={toast?.type === "error" ? "assertive" : "polite"}>{toast ? tr(toast.key, toast.values) : ""}</div>
+      <div className={`toast${toast ? " is-visible" : ""}`} data-tone={toast?.type === "error" ? "error" : "success"} role={toast?.type === "error" ? "alert" : "status"} aria-live={toast?.type === "error" ? "assertive" : "polite"}>{toast ? tr(toast.key, toast.values) : ""}</div>
     </>
   );
 }

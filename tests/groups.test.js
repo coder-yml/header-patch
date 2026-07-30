@@ -8,7 +8,8 @@ import {
   moveRuleToTarget,
   moveRuleWithinGroup,
   moveTopLevel,
-  moveTopLevelByDirection
+  moveTopLevelByDirection,
+  projectRuleList
 } from "../src/groups.js";
 
 const rules = [
@@ -24,6 +25,25 @@ test("visually groups matching keys at their first occurrence without mutating s
   assert.deepEqual(rules.map((rule) => rule.id), ["a1", "b", "a2", "blank"]);
   assert.equal(effectiveRule(groups[0]).id, "a2");
   assert.equal(effectiveRule({ ...groups[0], rules: groups[0].rules.map((rule) => ({ ...rule, enabled: false })) }).id, "a1");
+});
+
+test("projects collapsed groups at their first occurrence and expanded members in storage order", () => {
+  const collapsed = projectRuleList(rules);
+  assert.deepEqual(collapsed.map((item) => [item.type, item.rule?.id || item.group.key]), [
+    ["collapsed-group", "a2"],
+    ["rule", "b"],
+    ["rule", "blank"]
+  ]);
+
+  const expanded = projectRuleList(rules, new Set(["x-a"]));
+  assert.deepEqual(expanded.map((item) => [item.type, item.rule?.id || item.group.key]), [
+    ["group-header", "x-a"],
+    ["group-member", "a1"],
+    ["rule", "b"],
+    ["group-member", "a2"],
+    ["rule", "blank"]
+  ]);
+  assert.deepEqual(rules.map((rule) => rule.id), ["a1", "b", "a2", "blank"]);
 });
 
 test("duplicates next to the source and makes the copy the only active match", () => {

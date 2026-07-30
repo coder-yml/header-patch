@@ -343,7 +343,13 @@ async function runMainFlow(browser, origin, requestedLocale) {
   await popup.session.evaluate(setValue(field(middleId, "value"), "middle"));
   await popup.session.evaluate(setValue(field(lastId, "key"), " user-agent "));
   await popup.session.evaluate(setValue(field(lastId, "value"), "later"));
-  for (const id of ids) await popup.session.evaluate(`document.querySelector('[data-rule-id="${id}"] .check').click()`);
+  await popup.session.evaluate(`document.querySelector('[data-rule-id="${firstId}"] .check').click()`);
+  await popup.session.evaluate(`document.querySelector('[data-rule-id="${middleId}"] .check').click()`);
+  await popup.session.evaluate(`document.querySelector(".rule-group .group-toggle").click()`);
+  await waitForSelector(popup.session, ".rule-group.is-expanded");
+  await popup.session.evaluate(`document.querySelector('[data-rule-id="${lastId}"] .check').click()`);
+  await popup.session.evaluate(`document.querySelector(".rule-group.is-expanded .group-toggle").click()`);
+  await waitForCondition(popup.session, `!document.querySelector(".rule-group").classList.contains("is-expanded")`);
   await sleep(500);
 
   const grouped = await popup.session.evaluate(`Promise.all([
@@ -360,6 +366,18 @@ async function runMainFlow(browser, origin, requestedLocale) {
   assert.deepEqual(grouped.top, ["group", middleId]);
   assert.equal(grouped.collapsedVisible, lastId);
   assert.equal(grouped.userAgent, "later");
+
+  await popup.session.evaluate(`document.querySelector(".rule-group .group-meta").click()`);
+  await waitForSelector(popup.session, ".rule-group.is-expanded");
+  await popup.session.evaluate(`document.querySelector('[data-rule-id="${firstId}"] .key-input').click()`);
+  assert.equal(await popup.session.evaluate(`document.querySelector(".rule-group").classList.contains("is-expanded")`), true);
+  await popup.session.evaluate(`document.querySelector(".rule-group.is-expanded .group-meta").click()`);
+  await waitForCondition(popup.session, `!document.querySelector(".rule-group").classList.contains("is-expanded")`);
+  await popup.session.evaluate(`document.querySelector(".rule-group .rule.is-group-collapsed").click()`);
+  await waitForSelector(popup.session, ".rule-group.is-expanded");
+  await popup.session.evaluate(`document.querySelector(".rule-group.is-expanded .group-drag").click()`);
+  await waitForCondition(popup.session, `!document.querySelector(".rule-group").classList.contains("is-expanded")`);
+
   await popup.session.evaluate(`(() => {
     const input = document.querySelector('[data-rule-id="${lastId}"] .key-input');
     input.focus();
@@ -377,7 +395,7 @@ async function runMainFlow(browser, origin, requestedLocale) {
 
   await popup.session.evaluate(`document.querySelector(".group-view-button").click()`);
   await waitForSelector(popup.session, ".rule-group.is-expanded");
-  assert.deepEqual(await popup.session.evaluate(`[...document.querySelectorAll(".rules .rule")].map((rule) => rule.dataset.ruleId)`), [firstId, lastId, middleId]);
+  assert.deepEqual(await popup.session.evaluate(`[...document.querySelectorAll(".rules .rule")].map((rule) => rule.dataset.ruleId)`), [firstId, middleId, lastId]);
   await popup.session.screenshot(join(resultsDirectory, `popup-expanded-${locale}.png`));
 
   await popup.session.evaluate(`document.querySelector('[data-rule-id="${firstId}"] .check').click()`);
@@ -398,7 +416,7 @@ async function runMainFlow(browser, origin, requestedLocale) {
   assert.equal(await popup.session.evaluate(`document.querySelector('[data-rule-id="${middleId}"]').classList.contains("is-recently-moved")`), true);
 
   const beforeMouseDrag = await popup.session.evaluate(`chrome.storage.local.get("header-patch:state:v1").then((stored) => stored["header-patch:state:v1"].rules.map((rule) => rule.id).join(","))`);
-  await dragWithMouse(popup.session, `.rule-group [data-rule-id="${firstId}"] .drag-handle`, `.rule-group [data-rule-id="${lastId}"] .drag-handle`);
+  await dragWithMouse(popup.session, `[data-rule-id="${firstId}"] .drag-handle`, `[data-rule-id="${lastId}"] .drag-handle`);
   const afterMouseDrag = await popup.session.evaluate(`chrome.storage.local.get("header-patch:state:v1").then((stored) => stored["header-patch:state:v1"].rules.map((rule) => rule.id).join(","))`);
   assert.notEqual(afterMouseDrag, beforeMouseDrag);
 
@@ -576,16 +594,23 @@ async function verifyActionPopupLayout(browser) {
   const controller = await createPage(browser, popupUrl);
   await controller.session.navigate(popupUrl);
   await waitForSelector(controller.session, ".extension:not(.loading)");
-  const saveResponse = await controller.session.evaluate(`chrome.runtime.sendMessage({ type: "SAVE_STATE", state: {
+  const runtimeState = {
     version: 1,
     active: true,
-    rules: Array.from({ length: 6 }, (_, index) => ({
-      id: "runtime-group-" + index,
-      enabled: index === 3,
-      key: index % 2 ? "x-runtime-group" : "X-Runtime-Group",
-      value: "value-" + index
-    }))
-  } })`);
+    rules: [
+      { id: "runtime-group-0", enabled: false, key: "X-Runtime-Group", value: "value-0" },
+      { id: "runtime-single-0", enabled: false, key: "X-Single-0", value: "single-0" },
+      { id: "runtime-group-1", enabled: false, key: "x-runtime-group", value: "value-1" },
+      { id: "runtime-single-1", enabled: false, key: "X-Single-1", value: "single-1" },
+      { id: "runtime-group-2", enabled: false, key: "X-RUNTIME-GROUP", value: "value-2" },
+      { id: "runtime-group-3", enabled: true, key: "X-Runtime-Group", value: "value-3" },
+      { id: "runtime-single-2", enabled: false, key: "X-Single-2", value: "single-2" },
+      { id: "runtime-group-4", enabled: false, key: "x-runtime-group", value: "value-4" },
+      { id: "runtime-group-5", enabled: false, key: "X-Runtime-Group", value: "value-5" },
+      { id: "runtime-new", enabled: false, key: "X-New", value: "new" }
+    ]
+  };
+  const saveResponse = await controller.session.evaluate(`chrome.runtime.sendMessage({ type: "SAVE_STATE", state: ${JSON.stringify(runtimeState)} })`);
   assert.equal(saveResponse?.ok, true, `Could not seed action popup state: ${JSON.stringify(saveResponse)}`);
   const existingIds = new Set((await json(browser, "/json/list")).map((target) => target.id));
   const opened = await controller.session.evaluate(`chrome.action.openPopup().then(() => true, () => false)`);
@@ -614,6 +639,66 @@ async function verifyActionPopupLayout(browser) {
   assert.ok(layout.row[0] >= 0 && layout.row[1] <= layout.viewport[1], `Action popup row is clipped: ${JSON.stringify(layout)}`);
   assert.equal(layout.visibleId, "runtime-group-3");
   assert.equal(layout.groupCount, "6");
+
+  await session.evaluate(`document.querySelector(".rule-group .group-meta").click()`);
+  await waitForSelector(session, ".rule-group.is-expanded");
+  assert.deepEqual(await session.evaluate(`[...document.querySelectorAll(".rules > .rule")].map((rule) => rule.dataset.ruleId)`), runtimeState.rules.map((rule) => rule.id));
+  await session.evaluate(`document.querySelector('[data-rule-id="runtime-group-0"] .key-input').click()`);
+  assert.equal(await session.evaluate(`document.querySelector(".rule-group").classList.contains("is-expanded")`), true);
+  await session.evaluate(`document.querySelector(".rule-group.is-expanded .group-meta").click()`);
+  await waitForCondition(session, `!document.querySelector(".rule-group").classList.contains("is-expanded")`);
+  await session.evaluate(`document.querySelector(".rule-group .rule.is-group-collapsed").click()`);
+  await waitForSelector(session, ".rule-group.is-expanded");
+
+  assert.equal(await session.evaluate(`(() => {
+    const handle = document.querySelector(".rule-group.is-expanded .group-drag");
+    const transfer = new DataTransfer();
+    handle.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: transfer }));
+    handle.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: transfer }));
+    handle.click();
+    return document.querySelector(".rule-group").classList.contains("is-expanded");
+  })()`), true);
+  await sleep(300);
+  await session.evaluate(`document.querySelector(".rule-group.is-expanded .group-drag").click()`);
+  await waitForCondition(session, `!document.querySelector(".rule-group").classList.contains("is-expanded")`);
+
+  await session.evaluate(`(() => {
+    const input = document.querySelector('[data-rule-id="runtime-new"] .key-input');
+    input.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "X-Runtime-Group");
+    input.setSelectionRange(4, 4);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitForSelector(session, ".rule-group.is-expanded");
+  assert.deepEqual(await session.evaluate(`({ active: document.activeElement.dataset.ruleId, caret: document.activeElement.selectionStart, order: [...document.querySelectorAll(".rules > .rule")].map((rule) => rule.dataset.ruleId) })`), {
+    active: "runtime-new",
+    caret: 4,
+    order: runtimeState.rules.map((rule) => rule.id)
+  });
+  assert.equal(await session.evaluate(`document.querySelector(".group-view-button").getAttribute("aria-expanded")`), "true");
+  await session.evaluate(`document.querySelector(".rule-group.is-expanded .group-toggle").click()`);
+  await waitForCondition(session, `!document.querySelector(".rule-group").classList.contains("is-expanded")`);
+  await session.evaluate(`document.querySelector(".rule-group .group-toggle").click()`);
+  await waitForSelector(session, ".rule-group.is-expanded");
+
+  const beforeDelete = await session.evaluate(`(() => {
+    const extension = document.querySelector(".extension").getBoundingClientRect();
+    const footer = document.querySelector(".footer").getBoundingClientRect();
+    return { height: extension.height, footerTop: footer.top };
+  })()`);
+  for (const id of ["runtime-group-0", "runtime-group-1", "runtime-group-2", "runtime-group-3", "runtime-group-4", "runtime-new"]) {
+    await session.evaluate(`document.querySelector('[data-rule-id="${id}"] .remove').click()`);
+    await waitForCondition(session, `!document.querySelector('[data-rule-id="${id}"]')`);
+  }
+  await waitForCondition(session, `!document.querySelector(".rule-group")`);
+  const afterDelete = await session.evaluate(`(() => {
+    const extension = document.querySelector(".extension").getBoundingClientRect();
+    const footer = document.querySelector(".footer").getBoundingClientRect();
+    return { height: extension.height, footerTop: footer.top, remaining: [...document.querySelectorAll(".rules > .rule")].map((rule) => rule.dataset.ruleId) };
+  })()`);
+  assert.ok(afterDelete.height < beforeDelete.height, `Action popup frame did not shrink: ${JSON.stringify({ beforeDelete, afterDelete })}`);
+  assert.ok(afterDelete.footerTop < beforeDelete.footerTop, `Action popup footer did not move up: ${JSON.stringify({ beforeDelete, afterDelete })}`);
+  assert.deepEqual(afterDelete.remaining, ["runtime-single-0", "runtime-single-1", "runtime-single-2", "runtime-group-5"]);
   await session.screenshot(join(resultsDirectory, "popup-action-runtime.png"));
   assertLocalRequests(session);
   session.close();

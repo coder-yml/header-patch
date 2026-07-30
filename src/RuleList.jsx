@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { projectRuleList } from "./groups.js";
 import { CheckIcon, ChevronIcon, CopyIcon, DragIcon, RemoveIcon, StackIcon } from "./icons.jsx";
 
 function DragHandle({ label, payload, onKeyboardMove, onDragStart, onDragEnd, className = "" }) {
@@ -23,6 +24,14 @@ function DragHandle({ label, payload, onKeyboardMove, onDragStart, onDragEnd, cl
   );
 }
 
+function isGroupToggleSurface(target) {
+  if (!target || typeof target.closest !== "function") return false;
+  const groupHeader = target.closest(".group-header");
+  const collapsedRule = target.closest(".rule.is-group-collapsed");
+  if (!groupHeader && !collapsedRule) return false;
+  return !target.closest("input, textarea, select, option, .field, [contenteditable='true'], button:not(.drag-handle)");
+}
+
 function RuleRow({
   rule,
   issue,
@@ -39,7 +48,6 @@ function RuleRow({
   onRemove,
   onDuplicate,
   onToggleGroup,
-  onEditing,
   onSelect,
   onKeyboardMove,
   onDragStart,
@@ -64,6 +72,7 @@ function RuleRow({
 
   return (
     <article
+      id={`rule-${rule.id}`}
       className={`rule${invalid ? " has-error" : ""}${selected ? " is-selected" : ""}${recentlyMoved ? " is-recently-moved" : ""}${collapsed ? " has-group-header is-group-collapsed" : ""}${dropClass}`}
       data-rule-id={rule.id}
       onPointerDown={() => onSelect(payload)}
@@ -84,7 +93,7 @@ function RuleRow({
         role="checkbox"
         aria-checked={rule.enabled}
         aria-label={tr("enableRule")}
-        onClick={() => onChange({ ...rule, enabled: !rule.enabled }, false)}
+        onClick={() => onChange({ ...rule, enabled: !rule.enabled }, "enabled")}
       >
         <CheckIcon />
       </button>
@@ -104,9 +113,7 @@ function RuleRow({
             value={rule.key}
             aria-invalid={invalid}
             aria-describedby={invalid ? errorId : undefined}
-            onFocus={() => onEditing(rule.id)}
-            onBlur={() => onEditing(null)}
-            onChange={(event) => onChange({ ...rule, key: event.target.value }, true)}
+            onChange={(event) => onChange({ ...rule, key: event.target.value }, "key")}
           />
           {invalid && <span id={errorId} className="sr-only">{issueMessage}</span>}
         </div>
@@ -121,9 +128,7 @@ function RuleRow({
             spellCheck="false"
             placeholder={tr("headerValue")}
             value={rule.value}
-            onFocus={() => onEditing(rule.id)}
-            onBlur={() => onEditing(null)}
-            onChange={(event) => onChange({ ...rule, value: event.target.value }, false)}
+            onChange={(event) => onChange({ ...rule, value: event.target.value }, "value")}
           />
         </div>
       </div>
@@ -141,7 +146,10 @@ function RuleRow({
               enabled: rule.enabled ? tr("oneEnabled") : tr("noneEnabled"),
               action: tr("expand")
             })}
-            onClick={onToggleGroup}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleGroup();
+            }}
           >
             <ChevronIcon />
           </button>
@@ -158,10 +166,10 @@ function RuleRow({
 }
 
 export default function RuleList({
+  rules,
   groups,
   analysis,
   expandedGroups,
-  editingRuleId,
   focusRuleId,
   selected,
   recentlyMoved,
@@ -170,22 +178,24 @@ export default function RuleList({
   onRemove,
   onDuplicate,
   onDeleteGroup,
-  onToggleGroup,
-  onEditing,
+  onSetGroupExpanded,
   onSelect,
   onMove
 }) {
   const [dragging, setDragging] = useState(null);
   const [dropMark, setDropMark] = useState(null);
+  const suppressGroupClickUntil = useRef(0);
 
   const dragStart = (event, payload) => {
+    const source = event.currentTarget;
     setDragging(payload);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", payload.type);
-    requestAnimationFrame(() => event.currentTarget.closest(".rule, .rule-group")?.classList.add("is-dragging"));
+    requestAnimationFrame(() => source.closest(".rule, .rule-group")?.classList.add("is-dragging"));
   };
   const dragEnd = (event) => {
     event.currentTarget.closest(".rule, .rule-group")?.classList.remove("is-dragging");
+    suppressGroupClickUntil.current = Date.now() + 250;
     setDragging(null);
     setDropMark(null);
   };
@@ -199,39 +209,36 @@ export default function RuleList({
   const keyboardMove = (payload, direction, handle) => {
     if (onMove(payload, null, direction)) requestAnimationFrame(() => handle.focus());
   };
+  const toggleFromSurface = (event, key, expanded) => {
+    if (Date.now() < suppressGroupClickUntil.current || !isGroupToggleSurface(event.target)) return;
+    onSetGroupExpanded(key, !expanded);
+  };
+  const projection = projectRuleList(rules, expandedGroups, groups);
 
   return (
-    <div className="rules" aria-live="polite">
-      {groups.map((group) => {
-        const isGroup = group.rules.length > 1;
-        const ruleIds = group.rules.map((rule) => rule.id);
-        const visible = group.rules.find((rule) => rule.enabled) || group.rules[0];
-        const controlId = `group-${group.rules[0].id}`;
-        const topPayload = { type: isGroup ? "group" : "singleton", ids: ruleIds, key: group.key, controlId };
-        const forceExpanded = editingRuleId && editingRuleId !== visible.id && group.rules.some((rule) => rule.id === editingRuleId);
-        const expanded = isGroup && (expandedGroups.has(group.key) || forceExpanded);
-        const topSelected = selected?.type !== "member" && selected?.ids?.[0] === topPayload.ids[0];
-        const topMoved = recentlyMoved?.ids?.[0] === topPayload.ids[0];
-        const topDropClass = dropMark?.id === topPayload.ids[0] ? ` drop-${dropMark.placement}` : "";
-
-        if (!isGroup) {
-          const payload = topPayload;
+    <div className="rules" id="header-rules-list" aria-live="polite">
+      {projection.map((item) => {
+        if (item.type === "rule") {
+          const { rule } = item;
+          const payload = { type: "singleton", ids: [rule.id], key: "", controlId: "" };
+          const topSelected = selected?.type !== "member" && selected?.ids?.[0] === rule.id;
+          const topMoved = recentlyMoved?.ids?.[0] === rule.id;
+          const topDropClass = dropMark?.id === rule.id ? ` drop-${dropMark.placement}` : "";
           return (
             <RuleRow
-              key={group.rules[0].id}
-              rule={group.rules[0]}
-              issue={analysis.issues.get(group.rules[0].id)}
+              key={rule.id}
+              rule={rule}
+              issue={analysis.issues.get(rule.id)}
               tr={tr}
               grouped={false}
               collapsed={false}
-              shouldFocus={focusRuleId === group.rules[0].id}
+              shouldFocus={focusRuleId === rule.id}
               selected={topSelected}
               recentlyMoved={topMoved}
               payload={payload}
               onChange={onUpdate}
-              onRemove={() => onRemove(group.rules[0].id)}
-              onDuplicate={() => onDuplicate(group.rules[0].id)}
-              onEditing={onEditing}
+              onRemove={() => onRemove(rule.id)}
+              onDuplicate={() => onDuplicate(rule.id)}
               onSelect={onSelect}
               onKeyboardMove={keyboardMove}
               onDragStart={dragStart}
@@ -250,12 +257,89 @@ export default function RuleList({
           );
         }
 
+        const { group } = item;
+        const ruleIds = group.rules.map((rule) => rule.id);
+        const visible = group.rules.find((rule) => rule.enabled) || group.rules[0];
+        const expanded = expandedGroups.has(group.key);
+        const controlId = expanded ? group.rules.map((rule) => `rule-${rule.id}`).join(" ") : `group-${group.rules[0].id}`;
+        const topPayload = { type: "group", ids: ruleIds, key: group.key, controlId };
+        const topSelected = selected?.type !== "member" && selected?.ids?.[0] === topPayload.ids[0];
+        const topMoved = recentlyMoved?.ids?.[0] === topPayload.ids[0];
+        const topDropClass = dropMark?.id === topPayload.ids[0] ? ` drop-${dropMark.placement}` : "";
+
+        if (item.type === "group-header") {
+          return (
+            <section
+              className={`rule-group is-expanded is-expanded-anchor${topSelected ? " is-selected" : ""}${topMoved ? " is-recently-moved" : ""}${topDropClass}`}
+              key={`${group.key}-header`}
+              data-group-key={group.key}
+              onPointerDown={() => onSelect(topPayload)}
+              onClick={(event) => toggleFromSurface(event, group.key, true)}
+              onDragOver={(event) => {
+                if (dragging?.type === "member") return;
+                event.preventDefault();
+                setDropMark({ id: topPayload.ids[0], placement: placement(event) });
+              }}
+              onDrop={(event) => drop(event, topPayload)}
+            >
+              <header className="group-header">
+                <DragHandle label={tr("dragGroup")} payload={topPayload} className="group-drag" onKeyboardMove={keyboardMove} onDragStart={dragStart} onDragEnd={dragEnd} />
+                <button className="icon-button group-remove" type="button" aria-label={tr("deleteGroup", { key: visible.key.trim() })} title={tr("deleteEntireGroup")} onClick={() => onDeleteGroup(ruleIds)}><RemoveIcon strokeWidth="1.6" /></button>
+                <div className="group-actions">
+                  <button
+                    className="group-toggle"
+                    type="button"
+                    aria-expanded="true"
+                    aria-controls={controlId}
+                    aria-label={tr("groupSummary", {
+                      key: visible.key.trim(),
+                      count: group.rules.length,
+                      enabled: visible.enabled ? tr("oneEnabled") : tr("noneEnabled"),
+                      action: tr("collapse")
+                    })}
+                    onClick={(event) => { event.stopPropagation(); onSetGroupExpanded(group.key, false); }}
+                  ><ChevronIcon /></button>
+                  <span className="group-meta" aria-hidden="true"><span className="group-count"><StackIcon />{group.rules.length}</span></span>
+                </div>
+              </header>
+            </section>
+          );
+        }
+
+        if (item.type === "group-member") {
+          const { rule } = item;
+          const payload = { type: "member", id: rule.id, ids: [rule.id], key: group.key, controlId };
+          return (
+            <RuleRow
+              key={rule.id}
+              rule={rule}
+              issue={analysis.issues.get(rule.id)}
+              tr={tr}
+              grouped
+              collapsed={false}
+              shouldFocus={focusRuleId === rule.id}
+              selected={selected?.type === "member" && selected.id === rule.id}
+              recentlyMoved={recentlyMoved?.type === "member" && recentlyMoved.id === rule.id}
+              payload={payload}
+              onChange={onUpdate}
+              onRemove={() => onRemove(rule.id)}
+              onDuplicate={() => onDuplicate(rule.id)}
+              onSelect={onSelect}
+              onKeyboardMove={keyboardMove}
+              onDragStart={dragStart}
+              onDragEnd={dragEnd}
+              onDrop={drop}
+            />
+          );
+        }
+
         return (
           <section
-            className={`rule-group${expanded ? " is-expanded" : ""}${topSelected ? " is-selected" : ""}${topMoved ? " is-recently-moved" : ""}${topDropClass}`}
+            className={`rule-group${topSelected ? " is-selected" : ""}${topMoved ? " is-recently-moved" : ""}${topDropClass}`}
             key={group.key}
             data-group-key={group.key}
             onPointerDown={() => onSelect(topPayload)}
+            onClick={(event) => toggleFromSurface(event, group.key, false)}
             onDragOver={(event) => {
               if (dragging?.type === "member") return;
               event.preventDefault();
@@ -263,67 +347,27 @@ export default function RuleList({
             }}
             onDrop={(event) => drop(event, topPayload)}
           >
-            {expanded && (
-              <header className="group-header" onClick={(event) => {
-                if (!event.target.closest("button")) onToggleGroup(group.key);
-              }}>
-                <DragHandle label={tr("dragGroup")} payload={topPayload} className="group-drag" onKeyboardMove={keyboardMove} onDragStart={dragStart} onDragEnd={dragEnd} />
-                <button className="icon-button group-remove" type="button" aria-label={tr("deleteGroup", { key: visible.key.trim() })} title={tr("deleteEntireGroup")} onClick={() => onDeleteGroup(ruleIds)}><RemoveIcon strokeWidth="1.6" /></button>
-                <div className="group-actions">
-                  <button className="group-toggle" type="button" aria-expanded="true" aria-controls={controlId} onClick={() => onToggleGroup(group.key)}><ChevronIcon /></button>
-                  <span className="group-meta" aria-hidden="true"><span className="group-count"><StackIcon />{group.rules.length}</span></span>
-                </div>
-              </header>
-            )}
             <div className="group-rule-list" id={controlId}>
-              {expanded ? group.rules.map((rule) => {
-                const payload = { type: "member", id: rule.id, ids: [rule.id], key: group.key, controlId };
-                return (
-                  <RuleRow
-                    key={rule.id}
-                    rule={rule}
-                    issue={analysis.issues.get(rule.id)}
-                    tr={tr}
-                    grouped
-                    collapsed={false}
-                    shouldFocus={focusRuleId === rule.id}
-                    selected={selected?.type === "member" && selected.id === rule.id}
-                    recentlyMoved={recentlyMoved?.type === "member" && recentlyMoved.id === rule.id}
-                    payload={payload}
-                    onChange={onUpdate}
-                    onRemove={() => onRemove(rule.id)}
-                    onDuplicate={() => onDuplicate(rule.id)}
-                    onEditing={onEditing}
-                    onSelect={onSelect}
-                    onKeyboardMove={keyboardMove}
-                    onDragStart={dragStart}
-                    onDragEnd={dragEnd}
-                    onDrop={drop}
-                  />
-                );
-              }) : (
-                <RuleRow
-                  rule={visible}
-                  issue={analysis.issues.get(visible.id)}
-                  tr={tr}
-                  grouped
-                  collapsed
-                  groupCount={group.rules.length}
-                  expanded={false}
-                  shouldFocus={focusRuleId === visible.id}
-                  selected={topSelected}
-                  recentlyMoved={topMoved}
-                  payload={topPayload}
-                  onChange={onUpdate}
-                  onToggleGroup={() => onToggleGroup(group.key)}
-                  onEditing={onEditing}
-                  onSelect={onSelect}
-                  onKeyboardMove={keyboardMove}
-                  onDragStart={dragStart}
-                  onDragEnd={dragEnd}
-                  onDrop={drop}
-                />
-              )}
+              <RuleRow
+                rule={visible}
+                issue={analysis.issues.get(visible.id)}
+                tr={tr}
+                grouped
+                collapsed
+                groupCount={group.rules.length}
+                expanded={false}
+                shouldFocus={focusRuleId === visible.id}
+                selected={topSelected}
+                recentlyMoved={topMoved}
+                payload={topPayload}
+                onChange={onUpdate}
+                onToggleGroup={() => onSetGroupExpanded(group.key, true)}
+                onSelect={onSelect}
+                onKeyboardMove={keyboardMove}
+                onDragStart={dragStart}
+                onDragEnd={dragEnd}
+                onDrop={drop}
+              />
             </div>
           </section>
         );

@@ -5,6 +5,7 @@ import {
   buildRuleGroups,
   deleteRules,
   duplicateRule,
+  effectiveRule,
   moveRuleToTarget,
   moveRuleWithinGroup,
   moveTopLevel,
@@ -24,8 +25,8 @@ export default function App() {
   const [projectionRules, setProjectionRules] = useState([]);
   const [locale, setLocale] = useState(browserLocale());
   const [expandedGroups, setExpandedGroups] = useState(() => new Set());
+  const [transientExpandedKey, setTransientExpandedKey] = useState(null);
   const [focusRuleId, setFocusRuleId] = useState(null);
-  const [editingRuleId, setEditingRuleId] = useState(null);
   const [selected, setSelected] = useState(null);
   const [recentlyMoved, setRecentlyMoved] = useState(null);
   const [moveAnnouncement, setMoveAnnouncement] = useState("");
@@ -100,36 +101,57 @@ export default function App() {
     });
   };
 
-  const commitRules = useCallback((producer, deferGrouping = false) => {
+  const captureFocusedInput = () => {
+    const active = document.activeElement;
+    return active?.dataset?.ruleId ? {
+      ruleId: active.dataset.ruleId,
+      field: active.dataset.field,
+      start: active.selectionStart,
+      end: active.selectionEnd,
+      direction: active.selectionDirection
+    } : null;
+  };
+
+  const transientKeyFor = (nextRules, snapshot) => {
+    if (!snapshot) return null;
+    const group = buildRuleGroups(nextRules).find((candidate) => candidate.rules.length > 1 && candidate.rules.some((rule) => rule.id === snapshot.ruleId));
+    return group && effectiveRule(group).id !== snapshot.ruleId ? group.key : null;
+  };
+
+  const commitRules = useCallback((producer, options = {}) => {
     const current = stateRef.current;
     if (!current) return null;
     const nextRules = typeof producer === "function" ? producer(current.rules) : producer;
     if (nextRules === current.rules) return current.rules;
     commitState({ ...current, rules: nextRules });
 
-    if (!deferGrouping) {
-      window.clearTimeout(projectionTimer.current);
-      setProjectionRules(nextRules);
-    } else {
-      const active = document.activeElement;
-      const snapshot = active?.dataset?.ruleId ? {
-        ruleId: active.dataset.ruleId,
-        field: active.dataset.field,
-        start: active.selectionStart,
-        end: active.selectionEnd,
-        direction: active.selectionDirection
-      } : null;
-      window.clearTimeout(projectionTimer.current);
-      projectionTimer.current = window.setTimeout(() => {
-        setProjectionRules(nextRules);
-        restoreFocusedInput(snapshot);
-      }, 320);
+    const projection = options.projection || "immediate";
+    const transient = options.transient || "clear";
+    const snapshot = options.snapshot || null;
+    const applyProjection = () => {
+      if (projection !== "preserve") setProjectionRules(nextRules);
+      if (transient === "derive") setTransientExpandedKey(transientKeyFor(nextRules, snapshot));
+      if (transient === "clear") setTransientExpandedKey(null);
+      restoreFocusedInput(snapshot);
+    };
+
+    if (projection === "preserve") {
+      if (transient === "clear") setTransientExpandedKey(null);
+      return nextRules;
     }
+
+    window.clearTimeout(projectionTimer.current);
+    if (projection === "deferred") projectionTimer.current = window.setTimeout(applyProjection, 320);
+    else applyProjection();
     return nextRules;
   }, [commitState]);
 
   const rules = state?.rules || [];
   const analysis = useMemo(() => analyzeHeaderRules(rules), [rules]);
+  const projectedRules = useMemo(() => {
+    const live = new Map(rules.map((rule) => [rule.id, rule]));
+    return projectionRules.map((rule) => live.get(rule.id)).filter(Boolean);
+  }, [projectionRules, rules]);
   const groups = useMemo(() => {
     const live = new Map(rules.map((rule) => [rule.id, rule]));
     return buildRuleGroups(projectionRules)
@@ -137,7 +159,12 @@ export default function App() {
       .filter((group) => group.rules.length);
   }, [projectionRules, rules]);
   const expandableKeys = useMemo(() => groups.filter((group) => group.rules.length > 1).map((group) => group.key), [groups]);
-  const allExpanded = expandableKeys.length > 0 && expandableKeys.every((key) => expandedGroups.has(key));
+  const effectiveExpandedGroups = useMemo(() => {
+    const next = new Set(expandedGroups);
+    if (transientExpandedKey) next.add(transientExpandedKey);
+    return next;
+  }, [expandedGroups, transientExpandedKey]);
+  const allExpanded = expandableKeys.length > 0 && expandableKeys.every((key) => effectiveExpandedGroups.has(key));
   const appliedCount = state?.active ? analysis.count : 0;
   const hasExportableRules = exportableRules(rules).length > 0;
 
@@ -147,13 +174,27 @@ export default function App() {
       const next = new Set([...current].filter((key) => valid.has(key)));
       return next.size === current.size ? current : next;
     });
+    setTransientExpandedKey((current) => current && !expandableKeys.includes(current) ? null : current);
   }, [expandableKeys]);
 
   if (!state) {
     return <main className="page"><section className="extension loading" aria-label={tr("loadingLabel")}>{tr("loading")}</section></main>;
   }
 
-  const updateRule = (nextRule, deferGrouping) => commitRules((current) => replaceHeaderRule(current, nextRule), deferGrouping);
+  const updateRule = (nextRule, changeType) => {
+    const current = stateRef.current.rules;
+    const next = replaceHeaderRule(current, nextRule);
+    if (changeType === "value") return commitRules(next, { projection: "preserve", transient: "preserve" });
+    if (changeType === "enabled") return commitRules(next, { projection: "immediate", transient: "clear" });
+
+    const snapshot = captureFocusedInput();
+    const disabledDuplicate = current.some((rule) => rule.id !== nextRule.id && rule.enabled && !next.find((candidate) => candidate.id === rule.id)?.enabled);
+    return commitRules(next, {
+      projection: disabledDuplicate ? "immediate" : "deferred",
+      transient: "derive",
+      snapshot
+    });
+  };
   const removeRule = (id) => commitRules((current) => deleteRules(current, [id]));
   const removeGroup = (ids) => commitRules((current) => deleteRules(current, ids));
   const duplicate = (id) => commitRules((current) => duplicateRule(current, id, makeRuleId()));
@@ -198,12 +239,24 @@ export default function App() {
 
   const toggleLanguage = () => {
     const next = locale === "zh-CN" ? "en" : "zh-CN";
+    setTransientExpandedKey(null);
     setLocale(next);
     persistLanguage(next).catch(() => showToast("saveFailed", undefined, "error"));
   };
 
+  const setGroupExpanded = (key, expanded) => {
+    setTransientExpandedKey(null);
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (expanded) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  };
+
   const toggleAllGroups = () => {
     if (!expandableKeys.length) return;
+    setTransientExpandedKey(null);
     setExpandedGroups(allExpanded ? new Set() : new Set(expandableKeys));
   };
 
@@ -227,10 +280,10 @@ export default function App() {
           <section className="rules-panel">
             {rules.length ? (
               <RuleList
+                rules={projectedRules}
                 groups={groups}
                 analysis={analysis}
-                expandedGroups={expandedGroups}
-                editingRuleId={editingRuleId}
+                expandedGroups={effectiveExpandedGroups}
                 focusRuleId={focusRuleId}
                 selected={selected}
                 recentlyMoved={recentlyMoved}
@@ -239,12 +292,7 @@ export default function App() {
                 onRemove={removeRule}
                 onDuplicate={duplicate}
                 onDeleteGroup={removeGroup}
-                onToggleGroup={(key) => setExpandedGroups((current) => {
-                  const next = new Set(current);
-                  next.has(key) ? next.delete(key) : next.add(key);
-                  return next;
-                })}
-                onEditing={setEditingRuleId}
+                onSetGroupExpanded={setGroupExpanded}
                 onSelect={setSelected}
                 onMove={move}
               />

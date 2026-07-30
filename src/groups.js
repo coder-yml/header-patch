@@ -27,6 +27,29 @@ export function effectiveRule(group) {
   return group.rules.find((rule) => rule.enabled) || group.rules[0];
 }
 
+export function projectRuleList(rules, expandedKeys = new Set(), groups = buildRuleGroups(rules)) {
+  const groupByRuleId = new Map();
+
+  for (const group of groups) {
+    if (group.rules.length < 2) continue;
+    for (const rule of group.rules) groupByRuleId.set(rule.id, group);
+  }
+
+  return rules.flatMap((rule) => {
+    const group = groupByRuleId.get(rule.id);
+    if (!group) return [{ type: "rule", rule }];
+
+    const first = group.rules[0].id === rule.id;
+    if (!expandedKeys.has(group.key)) {
+      return first ? [{ type: "collapsed-group", group, rule: effectiveRule(group) }] : [];
+    }
+
+    return first
+      ? [{ type: "group-header", group }, { type: "group-member", group, rule }]
+      : [{ type: "group-member", group, rule }];
+  });
+}
+
 export function duplicateRule(rules, sourceId, nextId) {
   const index = rules.findIndex((rule) => rule.id === sourceId);
   if (index < 0) return rules;

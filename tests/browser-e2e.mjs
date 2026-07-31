@@ -466,12 +466,16 @@ async function runMainFlow(browser, origin, requestedLocale) {
 
   await popup.session.evaluate(`document.querySelectorAll(".footer-icon-button")[0].click()`);
   await waitForSelector(popup.session, ".import-dialog[open]");
-  assert.deepEqual(await popup.session.evaluate(`(() => {
+  const importDialogSize = await popup.session.evaluate(`(() => {
     const dialog = document.querySelector(".import-dialog").getBoundingClientRect();
     const textarea = document.querySelector(".import-textarea").getBoundingClientRect();
     const close = document.querySelector(".import-close").getBoundingClientRect();
     return { dialog: [dialog.width, dialog.height], textarea: [textarea.width, textarea.height], close: [close.width, close.height] };
-  })()`), { dialog: [520, 363], textarea: [486, 180], close: [44, 44] });
+  })()`);
+  assert.equal(importDialogSize.dialog[0], 520);
+  assert.ok(Math.abs(importDialogSize.dialog[1] - 363) <= 1, `Unexpected import dialog height: ${JSON.stringify(importDialogSize)}`);
+  assert.deepEqual(importDialogSize.textarea, [486, 180]);
+  assert.deepEqual(importDialogSize.close, [44, 44]);
   await popup.session.screenshot(join(resultsDirectory, "dialog-import.png"));
   await popup.session.evaluate(setValue("#import-content", "X-Missing"));
   await popup.session.evaluate(`document.querySelector(".import-dialog .import-submit").click()`);

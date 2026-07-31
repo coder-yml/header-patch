@@ -27,7 +27,7 @@ test("visually groups matching keys at their first occurrence without mutating s
   assert.equal(effectiveRule({ ...groups[0], rules: groups[0].rules.map((rule) => ({ ...rule, enabled: false })) }).id, "a1");
 });
 
-test("projects collapsed groups at their first occurrence and expanded members in storage order", () => {
+test("projects collapsed groups at their first occurrence and expanded groups as one visual unit", () => {
   const collapsed = projectRuleList(rules);
   assert.deepEqual(collapsed.map((item) => [item.type, item.rule?.id || item.group.key]), [
     ["collapsed-group", "a2"],
@@ -37,12 +37,11 @@ test("projects collapsed groups at their first occurrence and expanded members i
 
   const expanded = projectRuleList(rules, new Set(["x-a"]));
   assert.deepEqual(expanded.map((item) => [item.type, item.rule?.id || item.group.key]), [
-    ["group-header", "x-a"],
-    ["group-member", "a1"],
+    ["expanded-group", "x-a"],
     ["rule", "b"],
-    ["group-member", "a2"],
     ["rule", "blank"]
   ]);
+  assert.deepEqual(expanded[0].group.rules.map((rule) => rule.id), ["a1", "a2"]);
   assert.deepEqual(rules.map((rule) => rule.id), ["a1", "b", "a2", "blank"]);
 });
 

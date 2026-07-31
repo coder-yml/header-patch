@@ -260,20 +260,19 @@ export default function RuleList({
         const { group } = item;
         const ruleIds = group.rules.map((rule) => rule.id);
         const visible = group.rules.find((rule) => rule.enabled) || group.rules[0];
-        const expanded = expandedGroups.has(group.key);
-        const controlId = expanded ? group.rules.map((rule) => `rule-${rule.id}`).join(" ") : `group-${group.rules[0].id}`;
+        const controlId = `group-${group.rules[0].id}`;
         const topPayload = { type: "group", ids: ruleIds, key: group.key, controlId };
         const topSelected = selected?.type !== "member" && selected?.ids?.[0] === topPayload.ids[0];
         const topMoved = recentlyMoved?.ids?.[0] === topPayload.ids[0];
         const topDropClass = dropMark?.id === topPayload.ids[0] ? ` drop-${dropMark.placement}` : "";
 
-        if (item.type === "group-header") {
+        if (item.type === "expanded-group") {
           return (
             <section
-              className={`rule-group is-expanded is-expanded-anchor${topSelected ? " is-selected" : ""}${topMoved ? " is-recently-moved" : ""}${topDropClass}`}
-              key={`${group.key}-header`}
+              className={`rule-group is-expanded${topSelected ? " is-selected" : ""}${topMoved ? " is-recently-moved" : ""}${topDropClass}`}
+              key={group.key}
               data-group-key={group.key}
-              onPointerDown={() => onSelect(topPayload)}
+              onPointerDown={(event) => { if (event.target.closest(".group-header")) onSelect(topPayload); }}
               onClick={(event) => toggleFromSurface(event, group.key, true)}
               onDragOver={(event) => {
                 if (dragging?.type === "member") return;
@@ -302,34 +301,34 @@ export default function RuleList({
                   <span className="group-meta" aria-hidden="true"><span className="group-count"><StackIcon />{group.rules.length}</span></span>
                 </div>
               </header>
+              <div className="group-rule-list" id={controlId}>
+                {group.rules.map((rule) => {
+                  const payload = { type: "member", id: rule.id, ids: [rule.id], key: group.key, controlId };
+                  return (
+                    <RuleRow
+                      key={rule.id}
+                      rule={rule}
+                      issue={analysis.issues.get(rule.id)}
+                      tr={tr}
+                      grouped
+                      collapsed={false}
+                      shouldFocus={focusRuleId === rule.id}
+                      selected={selected?.type === "member" && selected.id === rule.id}
+                      recentlyMoved={recentlyMoved?.type === "member" && recentlyMoved.id === rule.id}
+                      payload={payload}
+                      onChange={onUpdate}
+                      onRemove={() => onRemove(rule.id)}
+                      onDuplicate={() => onDuplicate(rule.id)}
+                      onSelect={onSelect}
+                      onKeyboardMove={keyboardMove}
+                      onDragStart={dragStart}
+                      onDragEnd={dragEnd}
+                      onDrop={drop}
+                    />
+                  );
+                })}
+              </div>
             </section>
-          );
-        }
-
-        if (item.type === "group-member") {
-          const { rule } = item;
-          const payload = { type: "member", id: rule.id, ids: [rule.id], key: group.key, controlId };
-          return (
-            <RuleRow
-              key={rule.id}
-              rule={rule}
-              issue={analysis.issues.get(rule.id)}
-              tr={tr}
-              grouped
-              collapsed={false}
-              shouldFocus={focusRuleId === rule.id}
-              selected={selected?.type === "member" && selected.id === rule.id}
-              recentlyMoved={recentlyMoved?.type === "member" && recentlyMoved.id === rule.id}
-              payload={payload}
-              onChange={onUpdate}
-              onRemove={() => onRemove(rule.id)}
-              onDuplicate={() => onDuplicate(rule.id)}
-              onSelect={onSelect}
-              onKeyboardMove={keyboardMove}
-              onDragStart={dragStart}
-              onDragEnd={dragEnd}
-              onDrop={drop}
-            />
           );
         }
 

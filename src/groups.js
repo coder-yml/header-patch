@@ -40,13 +40,10 @@ export function projectRuleList(rules, expandedKeys = new Set(), groups = buildR
     if (!group) return [{ type: "rule", rule }];
 
     const first = group.rules[0].id === rule.id;
-    if (!expandedKeys.has(group.key)) {
-      return first ? [{ type: "collapsed-group", group, rule: effectiveRule(group) }] : [];
-    }
-
-    return first
-      ? [{ type: "group-header", group }, { type: "group-member", group, rule }]
-      : [{ type: "group-member", group, rule }];
+    if (!first) return [];
+    return expandedKeys.has(group.key)
+      ? [{ type: "expanded-group", group }]
+      : [{ type: "collapsed-group", group, rule: effectiveRule(group) }];
   });
 }
 

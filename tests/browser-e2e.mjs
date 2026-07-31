@@ -78,9 +78,21 @@ class CdpSession {
     return result.result.value;
   }
 
-  async screenshot(path) {
-    const result = await this.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
-    await writeFile(path, Buffer.from(result.data, "base64"));
+  async screenshot(path, { clip = null, scale = 1 } = {}) {
+    let metricsOverridden = false;
+    if (scale !== 1) {
+      const viewport = await this.evaluate(`({ width: innerWidth, height: innerHeight })`);
+      await this.send("Emulation.setDeviceMetricsOverride", { ...viewport, deviceScaleFactor: scale, mobile: false });
+      metricsOverridden = true;
+    }
+    try {
+      const params = { format: "png", captureBeyondViewport: true };
+      if (clip) params.clip = { ...clip, scale: 1 };
+      const result = await this.send("Page.captureScreenshot", params);
+      await writeFile(path, Buffer.from(result.data, "base64"));
+    } finally {
+      if (metricsOverridden) await this.send("Emulation.clearDeviceMetricsOverride");
+    }
   }
 
   close() { this.socket.close(); }
@@ -395,7 +407,39 @@ async function runMainFlow(browser, origin, requestedLocale) {
 
   await popup.session.evaluate(`document.querySelector(".group-view-button").click()`);
   await waitForSelector(popup.session, ".rule-group.is-expanded");
-  assert.deepEqual(await popup.session.evaluate(`[...document.querySelectorAll(".rules .rule")].map((rule) => rule.dataset.ruleId)`), [firstId, middleId, lastId]);
+  assert.deepEqual(await popup.session.evaluate(`[...document.querySelectorAll(".rules .rule")].map((rule) => rule.dataset.ruleId)`), [firstId, lastId, middleId]);
+  assert.deepEqual(await popup.session.evaluate(`(() => {
+    const group = document.querySelector(".rule-group.is-expanded");
+    const header = group.querySelector(":scope > .group-header").getBoundingClientRect();
+    const members = [...group.querySelectorAll(":scope > .group-rule-list > .rule")];
+    const groupRect = group.getBoundingClientRect();
+    const lastMember = members.at(-1).getBoundingClientRect();
+    return {
+      memberIds: members.map((rule) => rule.dataset.ruleId),
+      topLevel: [...document.querySelector(".rules").children].map((item) => item.classList.contains("rule-group") ? "group" : item.dataset.ruleId),
+      radius: getComputedStyle(group).borderRadius,
+      headerBeforeMembers: header.bottom <= members[0].getBoundingClientRect().top,
+      enclosesMembers: groupRect.top <= header.top && groupRect.bottom >= lastMember.bottom
+    };
+  })()`), {
+    memberIds: [firstId, lastId],
+    topLevel: ["group", middleId],
+    radius: "11px",
+    headerBeforeMembers: true,
+    enclosesMembers: true
+  });
+  const hoverPoint = await popup.session.evaluate(`(() => {
+    const rect = document.querySelector('[data-rule-id="${firstId}"]').getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`);
+  await popup.session.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...hoverPoint });
+  await sleep(180);
+  const hoverClip = await popup.session.evaluate(`(() => {
+    const rect = document.querySelector(".rule-group.is-expanded").getBoundingClientRect();
+    return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+  })()`);
+  await popup.session.screenshot(join(resultsDirectory, "popup-group-member-hover-2x.png"), { clip: hoverClip, scale: 2 });
+  await popup.session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
   await popup.session.screenshot(join(resultsDirectory, `popup-expanded-${locale}.png`));
 
   await popup.session.evaluate(`document.querySelector('[data-rule-id="${firstId}"] .check').click()`);
@@ -610,13 +654,15 @@ async function verifyActionPopupLayout(browser) {
       { id: "runtime-new", enabled: false, key: "X-New", value: "new" }
     ]
   };
+  const runtimeGroupIds = runtimeState.rules.filter((rule) => rule.key.trim().toLowerCase() === "x-runtime-group").map((rule) => rule.id);
+  const runtimeSingletonIds = runtimeState.rules.filter((rule) => rule.key.trim().toLowerCase() !== "x-runtime-group").map((rule) => rule.id);
   const saveResponse = await controller.session.evaluate(`chrome.runtime.sendMessage({ type: "SAVE_STATE", state: ${JSON.stringify(runtimeState)} })`);
   assert.equal(saveResponse?.ok, true, `Could not seed action popup state: ${JSON.stringify(saveResponse)}`);
   const existingIds = new Set((await json(browser, "/json/list")).map((target) => target.id));
   const opened = await controller.session.evaluate(`chrome.action.openPopup().then(() => true, () => false)`);
   assert.equal(opened, true, "The browser action popup did not open");
-  const target = await waitForNewTarget(browser, existingIds, (candidate) => candidate.url === popupUrl);
-  const session = await new CdpSession(target.webSocketDebuggerUrl).connect();
+  let target = await waitForNewTarget(browser, existingIds, (candidate) => candidate.url === popupUrl);
+  let session = await new CdpSession(target.webSocketDebuggerUrl).connect();
   await session.send("Page.enable");
   await session.send("Runtime.enable");
   await session.send("Network.enable");
@@ -642,7 +688,45 @@ async function verifyActionPopupLayout(browser) {
 
   await session.evaluate(`document.querySelector(".rule-group .group-meta").click()`);
   await waitForSelector(session, ".rule-group.is-expanded");
-  assert.deepEqual(await session.evaluate(`[...document.querySelectorAll(".rules > .rule")].map((rule) => rule.dataset.ruleId)`), runtimeState.rules.map((rule) => rule.id));
+  assert.deepEqual(await session.evaluate(`[...document.querySelectorAll(".rules .rule")].map((rule) => rule.dataset.ruleId)`), [...runtimeGroupIds, ...runtimeSingletonIds]);
+  assert.deepEqual(await session.evaluate(`[...document.querySelectorAll(".rule-group.is-expanded > .group-rule-list > .rule")].map((rule) => rule.dataset.ruleId)`), runtimeGroupIds);
+  const hoverSamples = [runtimeGroupIds[0], runtimeGroupIds[Math.floor(runtimeGroupIds.length / 2)], runtimeGroupIds.at(-1)];
+  for (const id of hoverSamples) {
+    const referenceId = runtimeGroupIds.find((candidate) => candidate !== id);
+    const hoverPoint = await session.evaluate(`(() => {
+      const rect = document.querySelector('[data-rule-id="${id}"]').getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })()`);
+    await session.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...hoverPoint });
+    await sleep(180);
+    const hoverLayout = await session.evaluate(`(() => {
+      const group = document.querySelector(".rule-group.is-expanded");
+      const hovered = document.querySelector('[data-rule-id="${id}"]');
+      const reference = document.querySelector('[data-rule-id="${referenceId}"]');
+      const groupRect = group.getBoundingClientRect();
+      const hoveredRect = hovered.getBoundingClientRect();
+      const hoverStyle = getComputedStyle(hovered, "::before");
+      return {
+        hovered: hovered.matches(":hover"),
+        selected: hovered.classList.contains("is-selected"),
+        rowLeftInset: hoveredRect.left - groupRect.left,
+        rowRightInset: groupRect.right - hoveredRect.right,
+        fieldDelta: hovered.querySelector(".fields").getBoundingClientRect().left - reference.querySelector(".fields").getBoundingClientRect().left,
+        hoverLeft: hoverStyle.left,
+        hoverRight: hoverStyle.right,
+        hoverRadius: hoverStyle.borderRadius,
+        hoverBackground: hoverStyle.backgroundColor
+      };
+    })()`);
+    assert.equal(hoverLayout.hovered, true);
+    assert.equal(hoverLayout.selected, false);
+    assert.ok(Math.abs(hoverLayout.rowLeftInset) <= 0.5 && Math.abs(hoverLayout.rowRightInset) <= 0.5, `Hover changed the member hit area: ${JSON.stringify({ id, hoverLayout })}`);
+    assert.ok(Math.abs(hoverLayout.fieldDelta) <= 0.5, `Hovered group member fields shifted horizontally: ${JSON.stringify({ id, hoverLayout })}`);
+    assert.deepEqual({ left: hoverLayout.hoverLeft, right: hoverLayout.hoverRight, radius: hoverLayout.hoverRadius }, { left: "4px", right: "4px", radius: "8px" });
+    assert.notEqual(hoverLayout.hoverBackground, "rgba(0, 0, 0, 0)");
+    assert.notEqual(hoverLayout.hoverBackground, "transparent");
+  }
+  await session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
   await session.evaluate(`document.querySelector('[data-rule-id="runtime-group-0"] .key-input').click()`);
   assert.equal(await session.evaluate(`document.querySelector(".rule-group").classList.contains("is-expanded")`), true);
   await session.evaluate(`document.querySelector(".rule-group.is-expanded .group-meta").click()`);
@@ -670,10 +754,10 @@ async function verifyActionPopupLayout(browser) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   })()`);
   await waitForSelector(session, ".rule-group.is-expanded");
-  assert.deepEqual(await session.evaluate(`({ active: document.activeElement.dataset.ruleId, caret: document.activeElement.selectionStart, order: [...document.querySelectorAll(".rules > .rule")].map((rule) => rule.dataset.ruleId) })`), {
+  assert.deepEqual(await session.evaluate(`({ active: document.activeElement.dataset.ruleId, caret: document.activeElement.selectionStart, order: [...document.querySelectorAll(".rules .rule")].map((rule) => rule.dataset.ruleId) })`), {
     active: "runtime-new",
     caret: 4,
-    order: runtimeState.rules.map((rule) => rule.id)
+    order: [...runtimeGroupIds, "runtime-new", ...runtimeSingletonIds.filter((id) => id !== "runtime-new")]
   });
   assert.equal(await session.evaluate(`document.querySelector(".group-view-button").getAttribute("aria-expanded")`), "true");
   await session.evaluate(`document.querySelector(".rule-group.is-expanded .group-toggle").click()`);
@@ -700,9 +784,78 @@ async function verifyActionPopupLayout(browser) {
   assert.ok(afterDelete.footerTop < beforeDelete.footerTop, `Action popup footer did not move up: ${JSON.stringify({ beforeDelete, afterDelete })}`);
   assert.deepEqual(afterDelete.remaining, ["runtime-single-0", "runtime-single-1", "runtime-single-2", "runtime-group-5"]);
   await session.screenshot(join(resultsDirectory, "popup-action-runtime.png"));
+
+  for (const id of ["runtime-single-0", "runtime-single-1", "runtime-single-2"]) {
+    await session.evaluate(`document.querySelector('[data-rule-id="${id}"] .remove').click()`);
+    await waitForCondition(session, `!document.querySelector('[data-rule-id="${id}"]')`);
+  }
+
   assertLocalRequests(session);
   session.close();
-  const response = await fetch(`${browser.cdpOrigin}/json/close/${target.id}`);
+  let response = await fetch(`${browser.cdpOrigin}/json/close/${target.id}`);
+  if (!response.ok) throw new Error(`Could not close action popup target: ${response.status}`);
+  const compactTargetIds = new Set((await json(browser, "/json/list")).map((candidate) => candidate.id));
+  const compactOpened = await controller.session.evaluate(`chrome.action.openPopup().then(() => true, () => false)`);
+  assert.equal(compactOpened, true, "The compact browser action popup did not open");
+  target = await waitForNewTarget(browser, compactTargetIds, (candidate) => candidate.url === popupUrl);
+  session = await new CdpSession(target.webSocketDebuggerUrl).connect();
+  await session.send("Page.enable");
+  await session.send("Runtime.enable");
+  await session.send("Network.enable");
+  await waitForSelector(session, "[data-rule-id=runtime-group-5]");
+  const compactHeight = await session.evaluate(`innerHeight`);
+  assert.ok(compactHeight < 420, `Compact action popup did not reproduce the short frame: ${compactHeight}`);
+
+  await session.evaluate(`document.querySelectorAll(".footer-icon-button")[0].click()`);
+  await waitForSelector(session, ".import-dialog[open]");
+  await waitForCondition(session, `innerHeight >= 420`);
+  const importLayout = await session.evaluate(`(() => {
+    const dialog = document.querySelector(".import-dialog").getBoundingClientRect();
+    const header = document.querySelector(".import-dialog-header").getBoundingClientRect();
+    const body = document.querySelector(".import-dialog-body");
+    const actions = document.querySelector(".import-dialog-actions").getBoundingClientRect();
+    return {
+      viewport: innerHeight,
+      dialog: { top: dialog.top, bottom: dialog.bottom, height: dialog.height },
+      header: { top: header.top, bottom: header.bottom },
+      actions: { top: actions.top, bottom: actions.bottom },
+      body: { client: body.clientHeight, scroll: body.scrollHeight }
+    };
+  })()`);
+  assert.ok(importLayout.dialog.top >= 0 && importLayout.dialog.bottom <= importLayout.viewport, `Compact import dialog is clipped: ${JSON.stringify(importLayout)}`);
+  assert.ok(importLayout.actions.top >= importLayout.header.bottom && importLayout.actions.bottom <= importLayout.dialog.bottom, `Compact import actions are not visible: ${JSON.stringify(importLayout)}`);
+  await session.screenshot(join(resultsDirectory, "dialog-import-action-compact.png"));
+  await session.evaluate(`document.querySelector(".import-close").click()`);
+  await waitForCondition(session, `!document.querySelector(".import-dialog").open`);
+
+  await session.evaluate(`document.querySelectorAll(".footer-icon-button")[1].click()`);
+  await waitForSelector(session, ".export-dialog[open]");
+  await waitForCondition(session, `innerHeight >= 420`);
+  await waitForCondition(session, `!document.querySelector(".export-submit").disabled`);
+  await sleep(150);
+  const exportLayout = await session.evaluate(`(() => {
+    const dialog = document.querySelector(".export-dialog").getBoundingClientRect();
+    const header = document.querySelector(".export-dialog-header").getBoundingClientRect();
+    const body = document.querySelector(".export-dialog-body");
+    const actions = document.querySelector(".export-dialog-actions").getBoundingClientRect();
+    return {
+      viewport: innerHeight,
+      dialog: { top: dialog.top, bottom: dialog.bottom, height: dialog.height },
+      header: { top: header.top, bottom: header.bottom },
+      actions: { top: actions.top, bottom: actions.bottom },
+      body: { client: body.clientHeight, scroll: body.scrollHeight }
+    };
+  })()`);
+  assert.ok(exportLayout.dialog.top >= 0 && exportLayout.dialog.bottom <= exportLayout.viewport, `Compact export dialog is clipped: ${JSON.stringify(exportLayout)}`);
+  assert.ok(exportLayout.actions.top >= exportLayout.header.bottom && exportLayout.actions.bottom <= exportLayout.dialog.bottom, `Compact export actions are not visible: ${JSON.stringify(exportLayout)}`);
+  await session.screenshot(join(resultsDirectory, "dialog-export-action-compact.png"));
+  await session.evaluate(`document.querySelector(".export-close").click()`);
+  await waitForCondition(session, `!document.querySelector(".export-dialog").open`);
+  await waitForCondition(session, `innerHeight < 420`);
+
+  assertLocalRequests(session);
+  session.close();
+  response = await fetch(`${browser.cdpOrigin}/json/close/${target.id}`);
   if (!response.ok) throw new Error(`Could not close action popup target: ${response.status}`);
   await closePage(browser, controller);
 }

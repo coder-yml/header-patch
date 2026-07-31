@@ -281,6 +281,19 @@ button { color: inherit; }
 .rule.has-group-header.is-group-collapsed { grid-template-columns: auto 24px minmax(0, 1fr) auto; }
 .rule.has-error { background: color-mix(in oklch, var(--danger) 6%, var(--surface-subtle)); }
 .rule:not(.is-selected):not(.has-error):hover { background: color-mix(in oklch, var(--fg) 3%, var(--surface-subtle)); }
+.rule-group.is-expanded .rule:not(.is-selected):not(.has-error) { isolation: isolate; }
+.rule-group.is-expanded .rule:not(.is-selected):not(.has-error)::before {
+  content: "";
+  position: absolute;
+  inset: 0 4px;
+  z-index: -1;
+  border-radius: 8px;
+  background: transparent;
+  pointer-events: none;
+  transition: background 150ms ease;
+}
+.rule-group.is-expanded .rule:not(.is-selected):not(.has-error):hover { background: transparent; }
+.rule-group.is-expanded .rule:not(.is-selected):not(.has-error):hover::before { background: color-mix(in oklch, var(--fg) 3%, var(--surface-subtle)); }
 .rule.is-selected {
   background: var(--surface);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--fg) 34%, var(--border)), 0 5px 14px color-mix(in oklch, var(--fg) 9%, transparent);
@@ -363,7 +376,8 @@ button { color: inherit; }
 .import-dialog, .export-dialog {
   width: min(520px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
-  overflow: auto;
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -371,11 +385,14 @@ button { color: inherit; }
   color: var(--fg);
   box-shadow: 0 24px 70px oklch(20% 0.02 250 / 0.28);
 }
+.import-dialog[open], .export-dialog[open] { display: flex; }
 .import-dialog::backdrop, .export-dialog::backdrop { background: oklch(20% 0.02 250 / 0.32); backdrop-filter: blur(2px); }
-.import-dialog-card, .export-dialog-card { padding: 16px; }
+.import-dialog-card, .export-dialog-card { width: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 16px; overflow: hidden; }
 .import-dialog-header, .export-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .import-dialog-header h2, .export-dialog-header h2 { margin: 0; font-family: var(--font-display); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
 .import-close, .export-close { width: 44px; height: 44px; margin: -8px -8px -8px 0; color: var(--muted); }
+.import-dialog-body, .export-dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.import-dialog-body { padding: 3px; margin: -3px; }
 .import-label { display: block; color: var(--fg); font-size: 12px; font-weight: 550; letter-spacing: 0.02em; }
 .import-textarea { width: 100%; min-height: 180px; margin-top: 6px; resize: vertical; padding: 12px; border: 1px solid color-mix(in oklch, var(--fg) 34%, var(--border)); border-radius: 10px; outline: 0; background: var(--bg); color: var(--fg); font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
 .import-textarea:focus-visible { outline: none; border-color: color-mix(in oklch, var(--fg) 58%, var(--border)); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in oklch, var(--fg) 8%, transparent); }
@@ -442,6 +459,10 @@ button { color: inherit; }
 .extension-runtime #root { height: auto; min-height: 0; }
 .extension-runtime .page { min-height: auto; }
 .extension-runtime .extension { max-height: 544px; }
+.extension-runtime:has(dialog[open]),
+.extension-runtime body:has(dialog[open]),
+.extension-runtime #root:has(dialog[open]),
+.extension-runtime .page:has(dialog[open]) { min-height: 420px; }
 
 @media (max-width: 520px) {
   body { background: var(--surface); }
